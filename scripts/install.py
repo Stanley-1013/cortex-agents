@@ -106,10 +106,102 @@ def install():
     print("  researcher - 資訊收集")
     print("\n使用方式:")
     print("  對 Claude Code 說：「使用 pfc agent 規劃 [任務描述]」")
-    print("\n文檔:")
-    print(f"  README:       {os.path.join(base_dir, 'README.md')}")
-    print(f"  協作指南:     {os.path.join(base_dir, 'SYSTEM_GUIDE.md')}")
-    print(f"  Agent 指南:   {os.path.join(base_dir, 'AGENT_SELECTOR.md')}")
+
+    # 5. 詢問是否加入專案 CLAUDE.md
+    ask_add_to_claude_md(base_dir)
+
+def ask_add_to_claude_md(base_dir):
+    """詢問是否將 PFC 系統設定加入專案的 CLAUDE.md"""
+    print("\n" + "=" * 50)
+
+    # 找當前目錄的 CLAUDE.md
+    cwd = os.getcwd()
+    claude_md_path = os.path.join(cwd, 'CLAUDE.md')
+
+    response = input("是否要將 PFC 系統設定加到當前專案的 CLAUDE.md？(y/n): ").strip().lower()
+
+    if response != 'y':
+        print(f"跳過。如需手動加入，請參考：{os.path.join(base_dir, 'README.md')}")
+        return
+
+    # 要加入的設定內容
+    pfc_config = '''
+## Neuromorphic Multi-Agent 系統
+
+> **本專案使用 Neuromorphic Multi-Agent 系統進行任務管理**
+>
+> 完整協作指南：`~/.claude/neuromorphic/SYSTEM_GUIDE.md`
+
+### ⚠️ 使用規則
+
+**一般任務**：Claude Code 可直接執行，不需派發 agent。
+
+**使用 PFC 系統時**（複雜多步驟任務、用戶明確要求）：
+
+1. **透過 Task tool 派發 agent** - 使用 subagent_type 指定 agent
+2. **完整執行循環**：
+   - 派發 `pfc` agent → 規劃任務、分解子任務
+   - 派發 `executor` agent → 執行各子任務
+   - 派發 `critic` agent → 驗證結果
+   - 派發 `memory` agent → 存經驗
+3. **auto-compact 後必須檢查任務進度** - 讀取 DB 恢復狀態
+
+**禁止行為（使用 PFC 時）：**
+- ❌ 直接用 Bash 執行本應由 Executor 做的檔案操作/程式碼修改
+- ❌ 自己扮演 PFC 規劃而不派發 Task tool
+- ❌ 跳過 Critic 驗證直接完成任務
+
+**Agent 限制：**
+- ❌ Executor 禁止執行 `git commit` / `git push` - 由 Claude Code 主體審核後提交
+- ❌ Agent 不得覆蓋人工編排的文檔，除非明確指示
+
+### 可用 Agents
+
+| Agent | subagent_type | 用途 |
+|-------|---------------|------|
+| PFC | `pfc` | 任務規劃、協調 |
+| Executor | `executor` | 執行單一任務 |
+| Critic | `critic` | 驗證結果 |
+| Memory | `memory` | 知識管理 |
+| Researcher | `researcher` | 資訊收集 |
+
+### 系統入口（供 Agent 使用）
+
+```python
+import sys
+import os
+sys.path.insert(0, os.path.expanduser('~/.claude/neuromorphic'))
+from servers.tasks import get_task_progress, create_task
+from servers.memory import search_memory, load_checkpoint
+```
+
+### 使用方式
+
+對 Claude Code 說：「使用 pfc agent 規劃 [任務描述]」
+'''
+
+    try:
+        if os.path.exists(claude_md_path):
+            # 檢查是否已經有 PFC 設定
+            with open(claude_md_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            if 'Neuromorphic Multi-Agent' in content:
+                print("⚠️  CLAUDE.md 已包含 PFC 系統設定，跳過")
+                return
+
+            # 附加到檔案末尾
+            with open(claude_md_path, 'a', encoding='utf-8') as f:
+                f.write('\n' + pfc_config)
+            print(f"✅ 已加入 {claude_md_path}")
+        else:
+            # 建立新檔案
+            with open(claude_md_path, 'w', encoding='utf-8') as f:
+                f.write(f"# {os.path.basename(cwd)} - 專案指令\n" + pfc_config)
+            print(f"✅ 已建立 {claude_md_path}")
+    except Exception as e:
+        print(f"❌ 無法寫入 CLAUDE.md: {e}")
+        print(f"   請手動加入，參考：{os.path.join(base_dir, 'README.md')}")
 
 def init_database(db_path, schema_path):
     """初始化 SQLite 資料庫"""
