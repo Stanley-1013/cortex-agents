@@ -14,14 +14,25 @@ BRAIN_DB = os.path.expanduser("~/.claude/neuromorphic/brain/brain.db")
 SCHEMA = """
 === Tasks Server ===
 
-create_task(project, description, priority=5, parent_id=None) -> str
+create_task(project, description, priority=5, parent_id=None, branch=None) -> str
     建立新任務，回傳 task_id
+
+    Parameters:
+        project: 專案名稱
+        description: 任務描述
+        priority: 優先級 (1-10)
+        parent_id: 父任務 ID（可選）
+        branch: Branch 信息（可選）
+            {
+                'flow_id': 'flow.auth',
+                'domain_ids': ['domain.user']
+            }
 
 create_subtask(parent_id, description, assigned_agent='executor', depends_on=None, requires_validation=True) -> str
     建立子任務（可指定是否需要驗證）
 
 get_task(task_id) -> Dict
-    取得任務詳情
+    取得任務詳情（包含 metadata 和 branch）
 
 update_task_status(task_id, status, result=None, error=None) -> None
     更新任務狀態 ('pending', 'running', 'done', 'failed', 'blocked')
@@ -43,22 +54,64 @@ mark_validated(task_id, status, validator_task_id=None) -> None
 
 advance_task_phase(task_id, phase) -> None
     推進任務階段 ('execution', 'validation', 'documentation', 'completed')
+
+get_task_branch(task_id) -> Optional[Dict]
+    取得任務的 Branch 信息
+
+    Returns: {'flow_id': 'flow.auth', 'domain_ids': [...]} 或 None
+
+set_task_branch(task_id, branch) -> None
+    設定任務的 Branch 信息
+
+    Parameters:
+        task_id: 任務 ID
+        branch: {'flow_id': 'flow.auth', 'domain_ids': ['domain.user']}
+
+load_branch_context(branch, project_dir=None) -> str
+    加載 Branch 完整 context（整合 SSOT + Memory）
+
+    Parameters:
+        branch: {'flow_id': 'flow.auth', 'domain_ids': ['domain.user']}
+        project_dir: 專案目錄（可選）
+
+    Returns: 組合的 context 字符串（doctrine + flow_spec + 相關 memory）
 """
 
 def get_db():
     return sqlite3.connect(BRAIN_DB)
 
 def create_task(project: str, description: str, priority: int = 5,
-                parent_id: str = None) -> str:
-    """建立新任務"""
+                parent_id: str = None, branch: Dict = None) -> str:
+    """建立新任務
+
+    Args:
+        project: 專案名稱
+        description: 任務描述
+        priority: 優先級 (1-10)
+        parent_id: 父任務 ID（可選）
+        branch: Branch 信息（可選）
+            {
+                'flow_id': 'flow.auth',
+                'domain_ids': ['domain.user']
+            }
+
+    Returns:
+        task_id
+    """
     db = get_db()
     cursor = db.cursor()
 
     task_id = str(uuid.uuid4())[:8]
+
+    # 構建 metadata
+    metadata = None
+    if branch:
+        metadata = json.dumps({'branch': branch})
+
     cursor.execute('''
-        INSERT INTO tasks (id, parent_id, project, description, priority)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (task_id, parent_id, project, description, priority))
+        INSERT INTO tasks (id, parent_id, project, description, priority, metadata)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (task_id, parent_id, project, description, priority, metadata))
 
     db.commit()
     db.close()
@@ -107,7 +160,7 @@ def create_subtask(parent_id: str, description: str,
     return task_id
 
 def get_task(task_id: str) -> Optional[Dict]:
-    """取得任務詳情"""
+    """取得任務詳情（包含 metadata 和 branch）"""
     db = get_db()
     cursor = db.cursor()
 
@@ -115,7 +168,8 @@ def get_task(task_id: str) -> Optional[Dict]:
         SELECT id, parent_id, project, description, status, priority,
                assigned_agent, result, error_message, retry_count,
                created_at, started_at, completed_at,
-               phase, requires_validation, validation_status, validator_task_id
+               phase, requires_validation, validation_status, validator_task_id,
+               metadata
         FROM tasks WHERE id = ?
     ''', (task_id,))
 
@@ -123,6 +177,16 @@ def get_task(task_id: str) -> Optional[Dict]:
     db.close()
 
     if row:
+        # 解析 metadata
+        metadata = None
+        branch = None
+        if row[17]:
+            try:
+                metadata = json.loads(row[17])
+                branch = metadata.get('branch')
+            except json.JSONDecodeError:
+                pass
+
         return {
             'id': row[0],
             'parent_id': row[1],
@@ -140,7 +204,9 @@ def get_task(task_id: str) -> Optional[Dict]:
             'phase': row[13],
             'requires_validation': bool(row[14]) if row[14] is not None else True,
             'validation_status': row[15],
-            'validator_task_id': row[16]
+            'validator_task_id': row[16],
+            'metadata': metadata,
+            'branch': branch
         }
     return None
 
@@ -452,6 +518,117 @@ def get_validation_summary(parent_id: str) -> Dict:
     }
 
 
+def get_task_branch(task_id: str) -> Optional[Dict]:
+    """取得任務的 Branch 信息
+
+    Args:
+        task_id: 任務 ID
+
+    Returns:
+        {'flow_id': 'flow.auth', 'domain_ids': [...]} 或 None
+    """
+    task = get_task(task_id)
+    if task:
+        return task.get('branch')
+    return None
+
+
+def set_task_branch(task_id: str, branch: Dict) -> None:
+    """設定任務的 Branch 信息
+
+    Args:
+        task_id: 任務 ID
+        branch: {'flow_id': 'flow.auth', 'domain_ids': ['domain.user']}
+    """
+    db = get_db()
+    cursor = db.cursor()
+
+    # 取得現有 metadata
+    cursor.execute('SELECT metadata FROM tasks WHERE id = ?', (task_id,))
+    row = cursor.fetchone()
+
+    if row:
+        try:
+            metadata = json.loads(row[0]) if row[0] else {}
+        except json.JSONDecodeError:
+            metadata = {}
+
+        metadata['branch'] = branch
+
+        cursor.execute('''
+            UPDATE tasks SET metadata = ? WHERE id = ?
+        ''', (json.dumps(metadata), task_id))
+
+        db.commit()
+
+    db.close()
+
+
+def load_branch_context(branch: Dict, project_dir: str = None) -> str:
+    """加載 Branch 完整 context（整合 SSOT + Memory）
+
+    Args:
+        branch: {'flow_id': 'flow.auth', 'domain_ids': ['domain.user']}
+        project_dir: 專案目錄（可選）
+
+    Returns:
+        組合的 context 字符串（doctrine + flow_spec + 相關 memory）
+    """
+    # 延遲 import 避免循環依賴
+    from servers.ssot import load_ssot_for_branch
+    from servers.memory import search_memory
+
+    sections = []
+
+    # 1. 從 SSOT 加載 context
+    ssot_context = load_ssot_for_branch(branch, project_dir)
+    if ssot_context:
+        sections.append(ssot_context)
+
+    # 2. 從 Memory 加載相關記憶
+    flow_id = branch.get('flow_id')
+    domain_ids = branch.get('domain_ids', [])
+
+    if flow_id:
+        # 搜尋 flow 相關的記憶
+        memories = search_memory(
+            query=flow_id.replace('flow.', ''),
+            branch_flow=flow_id,
+            limit=5
+        )
+
+        if memories:
+            memory_section = "# 相關記憶\n\n"
+            for m in memories:
+                title = m.get('title', '無標題')
+                content = m.get('content', '')[:300]
+                memory_section += f"## {title}\n{content}\n\n"
+
+            sections.append(memory_section)
+
+    return "\n\n---\n\n".join(sections) if sections else ""
+
+
+def _ensure_metadata_column():
+    """確保 tasks 表有 metadata 欄位"""
+    db = get_db()
+    cursor = db.cursor()
+
+    # 檢查欄位是否存在
+    cursor.execute("PRAGMA table_info(tasks)")
+    columns = [row[1] for row in cursor.fetchall()]
+
+    if 'metadata' not in columns:
+        cursor.execute('ALTER TABLE tasks ADD COLUMN metadata TEXT')
+        db.commit()
+
+    db.close()
+
+
+# 初始化時確保欄位存在
+_ensure_metadata_column()
+
+
 __all__ = [
     'SCHEMA',
     'create_task',
@@ -466,5 +643,8 @@ __all__ = [
     'mark_validated',
     'advance_task_phase',
     'get_validation_summary',
-    'get_active_tasks_for_project'
+    'get_active_tasks_for_project',
+    'get_task_branch',
+    'set_task_branch',
+    'load_branch_context'
 ]

@@ -14,7 +14,8 @@ BRAIN_DB = os.path.expanduser("~/.claude/neuromorphic/brain/brain.db")
 SCHEMA = """
 === Memory Server ===
 
-search_memory(query, project=None, category=None, limit=5, status='active', include_all=False) -> List[Dict]
+search_memory(query, project=None, category=None, limit=5, status='active', include_all=False,
+              branch_flow=None, branch_domain=None, branch_page=None) -> List[Dict]
     全文搜尋長期記憶
 
     Parameters:
@@ -24,10 +25,14 @@ search_memory(query, project=None, category=None, limit=5, status='active', incl
         limit: 回傳筆數上限
         status: 狀態過濾 ('active' 預設)
         include_all: 設為 True 時搜尋所有狀態
+        branch_flow: Flow ID 過濾 (可選，如 'flow.auth')
+        branch_domain: Domain ID 過濾 (可選，如 'domain.user')
+        branch_page: Page ID 過濾 (可選，如 'page.login')
 
-    Returns: [{id, category, title, content, importance, access_count}]
+    Returns: [{id, category, title, content, importance, access_count, branch_flow, branch_domain}]
 
-store_memory(category, content, title=None, project=None, importance=5) -> int
+store_memory(category, content, title=None, project=None, importance=5,
+             branch_flow=None, branch_domain=None, branch_page=None) -> int
     儲存到長期記憶
 
     Parameters:
@@ -36,6 +41,9 @@ store_memory(category, content, title=None, project=None, importance=5) -> int
         title: 標題 (可選)
         project: 專案名稱 (可選，NULL 為全局)
         importance: 重要性 1-10
+        branch_flow: 關聯的 Flow ID (可選，如 'flow.auth')
+        branch_domain: 關聯的 Domain ID (可選，如 'domain.user')
+        branch_page: 關聯的 Page ID (可選，如 'page.login')
 
     Returns: memory_id
 
@@ -229,7 +237,9 @@ def find_similar_memories(content: str, category: str = None,
 
 def search_memory(query: str, project: str = None,
                   category: str = None, limit: int = 5,
-                  status: str = 'active', include_all: bool = False) -> List[Dict]:
+                  status: str = 'active', include_all: bool = False,
+                  branch_flow: str = None, branch_domain: str = None,
+                  branch_page: str = None) -> List[Dict]:
     """全文搜尋長期記憶
 
     Args:
@@ -239,6 +249,9 @@ def search_memory(query: str, project: str = None,
         limit: 回傳筆數上限
         status: 狀態過濾，預設 'active'
         include_all: 設為 True 時搜尋所有狀態
+        branch_flow: Flow ID 過濾 (可選，如 'flow.auth')
+        branch_domain: Domain ID 過濾 (可選，如 'domain.user')
+        branch_page: Page ID 過濾 (可選，如 'page.login')
     """
     db = get_db()
     cursor = db.cursor()
@@ -248,7 +261,8 @@ def search_memory(query: str, project: str = None,
 
     sql = '''
         SELECT ltm.id, ltm.category, ltm.title, ltm.content,
-               ltm.importance, ltm.access_count
+               ltm.importance, ltm.access_count,
+               ltm.branch_flow, ltm.branch_domain
         FROM long_term_memory ltm
         JOIN memory_fts fts ON ltm.id = fts.rowid
         WHERE memory_fts MATCH ?
@@ -268,6 +282,19 @@ def search_memory(query: str, project: str = None,
         sql += ' AND ltm.status = ?'
         params.append(status)
 
+    # Branch 過濾（Story 2: Memory 查詢增強）
+    if branch_flow:
+        sql += ' AND (ltm.branch_flow = ? OR ltm.branch_flow IS NULL)'
+        params.append(branch_flow)
+
+    if branch_domain:
+        sql += ' AND (ltm.branch_domain = ? OR ltm.branch_domain IS NULL)'
+        params.append(branch_domain)
+
+    if branch_page:
+        sql += ' AND (ltm.branch_page = ? OR ltm.branch_page IS NULL)'
+        params.append(branch_page)
+
     sql += ' ORDER BY rank LIMIT ?'
     params.append(limit)
 
@@ -281,7 +308,9 @@ def search_memory(query: str, project: str = None,
             'title': row[2],
             'content': row[3],
             'importance': row[4],
-            'access_count': row[5]
+            'access_count': row[5],
+            'branch_flow': row[6],
+            'branch_domain': row[7]
         })
         # 更新存取計數
         cursor.execute('''
@@ -297,16 +326,34 @@ def search_memory(query: str, project: str = None,
 
 def store_memory(category: str, content: str, title: str = None,
                  project: str = None, subcategory: str = None,
-                 importance: int = 5) -> int:
-    """儲存到長期記憶"""
+                 importance: int = 5, branch_flow: str = None,
+                 branch_domain: str = None, branch_page: str = None) -> int:
+    """儲存到長期記憶
+
+    Args:
+        category: 記憶類別 ('sop', 'knowledge', 'error', 'preference', 'skill')
+        content: 記憶內容
+        title: 標題 (可選)
+        project: 專案名稱 (可選，NULL 為全局)
+        subcategory: 子類別 (可選)
+        importance: 重要性 1-10
+        branch_flow: 關聯的 Flow ID (可選，如 'flow.auth')
+        branch_domain: 關聯的 Domain ID (可選，如 'domain.user')
+        branch_page: 關聯的 Page ID (可選，如 'page.login')
+
+    Returns:
+        memory_id: 新建記憶的 ID
+    """
     db = get_db()
     cursor = db.cursor()
 
     cursor.execute('''
         INSERT INTO long_term_memory
-        (category, subcategory, project, title, content, importance)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', (category, subcategory, project, title, content, importance))
+        (category, subcategory, project, title, content, importance,
+         branch_flow, branch_domain, branch_page)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (category, subcategory, project, title, content, importance,
+          branch_flow, branch_domain, branch_page))
 
     memory_id = cursor.lastrowid
     db.commit()

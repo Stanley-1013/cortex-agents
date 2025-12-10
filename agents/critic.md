@@ -26,9 +26,18 @@ sys.path.insert(0, os.path.expanduser('~/.claude/neuromorphic'))
 # 先查看 API 簽名（避免參數錯誤）
 from servers.tasks import SCHEMA as TASKS_SCHEMA
 from servers.memory import SCHEMA as MEMORY_SCHEMA
+from servers.graph import SCHEMA as GRAPH_SCHEMA
 print(TASKS_SCHEMA)
 
+from servers.tasks import get_task, get_task_branch
 from servers.memory import search_memory
+from servers.graph import get_neighbors, get_impact
+from servers.ssot import load_doctrine, load_flow_spec
+
+# 讀取任務和 branch 信息
+task = get_task(TASK_ID)
+branch = get_task_branch(TASK_ID) or get_task_branch(task.get('parent_id'))
+project = task.get('project', 'default')
 
 # ⭐ 查詢相關品質標準和最佳實踐
 domain = "testing"  # 根據驗證對象調整
@@ -40,6 +49,83 @@ if standards or patterns:
     for m in standards + patterns:
         print(f"- **{m['title']}**: {m['content'][:100]}...")
     print("請依據上述標準進行驗證。")
+```
+
+### 2. Graph 增強驗證 ⭐⭐⭐（關鍵步驟 - Story 16）
+
+```python
+# ⭐⭐⭐ 使用 Facade API 進行 Graph 增強驗證
+from servers.facade import validate_with_graph, format_validation_report
+
+# 定義要驗證的內容
+modified_files = ['src/api/auth.py', 'src/services/user.py']  # 被修改的檔案
+branch = get_task_branch(TASK_ID) or {'flow_id': 'flow.auth'}
+
+# 執行增強驗證
+validation = validate_with_graph(modified_files, branch, project)
+
+# 輸出格式化報告
+report = format_validation_report(validation)
+print(report)
+
+# 或直接使用結構化數據
+print("\n=== 驗證摘要 ===")
+
+# 1. 影響分析
+impact = validation['impact_analysis']
+print(f"API 受影響: {'⚠️ Yes' if impact['api_affected'] else '✅ No'}")
+print(f"跨模組影響: {'⚠️ Yes' if impact['cross_module_impact'] else '✅ No'}")
+
+# 2. SSOT 符合性
+ssot = validation['ssot_compliance']
+status_emoji = {'ok': '✅', 'warning': '⚠️', 'violation': '❌'}[ssot['status']]
+print(f"SSOT 符合性: {status_emoji} {ssot['status'].upper()}")
+
+# 3. 測試覆蓋
+tests = validation['test_coverage']
+print(f"測試覆蓋: {len(tests['covered'])} covered, {len(tests['missing'])} missing")
+
+# 4. 建議
+if validation['recommendations']:
+    print("\n=== 建議 ===")
+    for r in validation['recommendations']:
+        print(f"  - {r}")
+```
+
+**舊版手動流程（備用）**：
+
+```python
+# 加載核心原則（必讀）
+doctrine = load_doctrine()
+print("## 核心原則 (Doctrine)")
+print(doctrine[:500])
+
+# 如果有 branch，進行結構化驗證
+if branch and branch.get('flow_id'):
+    flow_id = branch['flow_id']
+
+    # 1. 找當前 branch 的鄰居
+    neighbors = get_neighbors(flow_id, project, depth=1)
+    print(f"\n## {flow_id} 的鄰居節點")
+    for n in neighbors:
+        print(f"- {n['id']} ({n['kind']}) via {n.get('edge_kind', '-')}")
+
+    # 2. 加載 Flow 規格
+    flow_spec = load_flow_spec(flow_id)
+    print(f"\n## Flow 規格: {flow_id}")
+    print(flow_spec[:500] if flow_spec else "(未找到規格)")
+
+    # 3. 檢查測試覆蓋
+    test_nodes = [n for n in neighbors if n['kind'] == 'test']
+    if not test_nodes:
+        print(f"\n⚠️ 警告: {flow_id} 沒有關聯的測試節點")
+
+    # 4. 檢查影響範圍
+    impacted = get_impact(flow_id, project)
+    if impacted:
+        print(f"\n## 影響範圍（修改 {flow_id} 會影響）")
+        for i in impacted:
+            print(f"- {i['id']} ({i['kind']})")
 ```
 
 ### ⚠️ 常見參數錯誤提醒
@@ -105,6 +191,20 @@ if standards or patterns:
 **結論**: ❌ 不建議執行 / ⚠️ 有條件通過 / ✅ 建議執行
 **信心度**: {confidence}
 
+### SSOT 符合性 ⭐
+
+| 項目 | 狀態 | 說明 |
+|------|------|------|
+| Doctrine 核心原則 | ✅ 符合 / ⚠️ 部分偏離 / ❌ 違反 | {detail} |
+| Flow 規格 | ✅ 符合 / ⚠️ 部分偏離 / ❌ 違反 | {detail} |
+| 測試覆蓋 | ✅ 有 / ⚠️ 不完整 / ❌ 缺失 | {test_nodes} |
+
+### 相關節點檢查
+
+| 鄰居 Node | 類型 | 檢查結果 |
+|-----------|------|----------|
+| {neighbor_id} | {kind} | ✅ 一致 / ⚠️ 需更新 |
+
 ### 發現的問題
 
 #### 🔴 高風險
@@ -116,6 +216,12 @@ if standards or patterns:
 #### 🟡 中風險
 1. **{issue_title}**
    - 說明: {description}
+
+### 影響範圍提醒
+
+修改此功能可能影響以下節點（來自 Graph）：
+- {impacted_node_1}
+- {impacted_node_2}
 
 ### 通過條件
 1. {condition_1}

@@ -70,9 +70,10 @@ PFC (規劃) → Executor (執行) → Critic (驗證) → Memory (存經驗)
 | Agent | subagent_type | 職責 |
 |-------|---------------|------|
 | **Executor** | `executor` | 執行單一任務、撰寫程式碼 |
-| **Critic** | `critic` | 驗證結果、風險評估 |
+| **Critic** | `critic` | 驗證結果、風險評估（Graph 增強） |
 | **Memory** | `memory` | 記憶存取、知識管理 |
 | **Researcher** | `researcher` | 資訊收集、深度研究 |
+| **Drift Detector** | `drift-detector` | SSOT-Code 偏差偵測 |
 
 ### 三層記憶查詢架構 ⭐
 
@@ -248,6 +249,40 @@ print(f"""
 """)
 ```
 
+## 三層查詢 API（Facade）
+
+### PFC 三層查詢（Story 15）
+```python
+from servers.facade import get_full_context, format_context_for_agent
+
+branch = {'flow_id': 'flow.auth', 'domain_ids': ['domain.user']}
+context = get_full_context(branch, project_name="PROJECT_NAME")
+# context 包含: ssot, code, memory, drift
+
+formatted = format_context_for_agent(context)
+print(formatted)
+```
+
+### Drift 偵測（Story 17）
+```python
+from servers.drift import detect_all_drifts, get_drift_summary
+
+project = os.path.basename(os.getcwd())
+report = detect_all_drifts(project)
+if report.has_drift:
+    print(get_drift_summary(project))
+```
+
+### Graph 增強驗證（Story 16）
+```python
+from servers.facade import validate_with_graph, format_validation_report
+
+modified_files = ['src/api/auth.py']
+branch = {'flow_id': 'flow.auth'}
+validation = validate_with_graph(modified_files, branch, project)
+print(format_validation_report(validation))
+```
+
 ## 最佳實踐
 
 1. **並行派發** - 使用多個 Task tool 同時執行獨立任務
@@ -255,6 +290,7 @@ print(f"""
 3. **存經驗** - 重要發現存到 Memory
 4. **DB 更新** - 每個任務完成後更新狀態
 5. **Checkpoint** - 定期存檔以防 context 溢出
+6. **偏差檢查** - 重大修改前先執行 Drift 偵測
 
 ## 常用指令
 

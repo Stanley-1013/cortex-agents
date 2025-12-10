@@ -64,6 +64,7 @@ python3 ~/.claude/neuromorphic/scripts/install.py
 | Critic | `critic` | 驗證結果 |
 | Memory | `memory` | 知識管理 |
 | Researcher | `researcher` | 資訊收集 |
+| Drift Detector | `drift-detector` | 偏差偵測 |
 
 ### 系統入口（供 Agent 使用）
 
@@ -71,8 +72,19 @@ python3 ~/.claude/neuromorphic/scripts/install.py
 import sys
 import os
 sys.path.insert(0, os.path.expanduser('~/.claude/neuromorphic'))
+
+# 核心 API（推薦使用 Facade）
+from servers.facade import (
+    get_full_context,        # 三層查詢（SSOT + Code + Memory）
+    validate_with_graph,     # Graph 增強驗證
+    check_drift,             # SSOT-Code 偏差檢查
+    sync_ssot_graph          # 同步 SSOT Index 到 Graph
+)
+
+# 傳統 API（仍可使用）
 from servers.tasks import get_task_progress, create_task
 from servers.memory import search_memory, load_checkpoint
+from servers.drift import detect_all_drifts, get_drift_summary
 ```
 
 ### 使用方式
@@ -129,9 +141,10 @@ PFC 會分析任務、分解為子任務、詢問確認、自動執行。
 |-------|---------------|------|------|
 | **PFC** | `pfc` | 任務規劃、分解、協調 | 決定子任務由誰執行 |
 | **Executor** | `executor` | 執行單一任務 | 完成即結束，context 清空 |
-| **Critic** | `critic` | 驗證結果品質 | 紅隊驗證 |
+| **Critic** | `critic` | 驗證結果品質 | 紅隊驗證 + Graph 增強 |
 | **Memory** | `memory` | 記憶管理 | 知識存取 |
 | **Researcher** | `researcher` | 資訊收集 | 深度研究 |
+| **Drift Detector** | `drift-detector` | SSOT-Code 偏差偵測 | 任務前檢查一致性 |
 
 ## 記憶系統
 
@@ -151,11 +164,18 @@ PFC 會分析任務、分解為子任務、詢問確認、自動執行。
 │   ├── executor.md
 │   ├── critic.md
 │   ├── memory.md
-│   └── researcher.md
+│   ├── researcher.md
+│   └── drift-detector.md  # SSOT-Code 偏差偵測
 ├── brain/
 │   ├── brain.db     # SQLite 資料庫
 │   └── schema.sql   # Schema 定義
 ├── servers/         # 工具庫
+│   ├── facade.py    # 統一入口 ⭐（三層查詢、增強驗證）
+│   ├── drift.py     # SSOT-Code 偏差偵測
+│   ├── graph.py     # SSOT Graph 操作
+│   ├── ssot.py      # SSOT 文檔加載
+│   ├── code_graph.py # Code Graph 操作
+│   ├── registry.py  # 類型註冊表
 │   ├── memory.py    # 記憶操作
 │   └── tasks.py     # 任務操作
 ├── scripts/

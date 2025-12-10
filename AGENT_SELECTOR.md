@@ -23,6 +23,15 @@ PFC（Prefrontal Cortex）是系統的規劃者，負責分析任務、分解工
 | **Critic** | 驗證結果品質 | 重要任務需要驗證 |
 | **Memory** | 儲存和檢索知識 | 學到重要經驗、查詢歷史知識 |
 | **Researcher** | 深度研究和資訊收集 | 不確定方向、需要大量分析 |
+| **Drift Detector** | 偵測 SSOT 與 Code 偏差 | 任務開始前檢查一致性 |
+
+## 執行循環
+
+完整執行流程：
+
+```
+(可選) Drift Detector → PFC (規劃) → Executor (執行) → Critic (驗證) → Memory (存經驗)
+```
 
 ## 驗證循環
 
@@ -37,6 +46,13 @@ Executor 執行 → Critic 驗證 → 通過 → 完成
 ```
 
 建議在重要任務上啟用驗證，確保品質。
+
+## Drift 偵測
+
+在開始重大修改前，可先執行 Drift Detector 檢查 SSOT 與 Code 是否一致：
+
+- 如果有偏差，可能需要先修復再繼續
+- 避免在不一致的基礎上做更多修改
 
 ## 你可以做的事
 

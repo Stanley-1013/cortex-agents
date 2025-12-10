@@ -64,10 +64,14 @@ sys.path.insert(0, os.path.expanduser('~/.claude/neuromorphic'))
 # 先查看 API 簽名（避免參數錯誤）
 from servers.tasks import SCHEMA as TASKS_SCHEMA
 from servers.memory import SCHEMA as MEMORY_SCHEMA
+from servers.ssot import SCHEMA as SSOT_SCHEMA
+from servers.graph import SCHEMA as GRAPH_SCHEMA
 print(TASKS_SCHEMA)
 
-from servers.tasks import create_task, create_subtask, get_task_progress
+from servers.tasks import create_task, create_subtask, get_task_progress, load_branch_context
 from servers.memory import search_memory, store_memory, save_checkpoint
+from servers.ssot import load_doctrine, load_index, parse_index
+from servers.graph import add_edge, get_neighbors, sync_from_index, record_node_access, get_hot_nodes, get_cold_nodes
 ```
 
 ### ⚠️ 常見參數錯誤提醒
@@ -81,12 +85,69 @@ from servers.memory import search_memory, store_memory, save_checkpoint
 
 > 不確定時執行：`print(TASKS_SCHEMA)` 或 `print(MEMORY_SCHEMA)`
 
-### 2. 查詢策略記憶 ⭐
+### 2. 選擇 Branch + 三層查詢 ⭐⭐⭐（必要步驟）
+
+> **重要**：規劃任務前必須先選定 Branch，然後查詢三層 context。
+
+```python
+# 定義這次任務的 Branch（我在系統的哪裡？）
+branch = {
+    'flow_id': 'flow.auth',           # 必選：業務流程
+    'domain_ids': ['domain.user']     # 可選：涉及的領域
+}
+
+# ⭐⭐⭐ 三層查詢（Story 15）- 使用 Facade API
+from servers.facade import get_full_context, format_context_for_agent
+
+# 取得完整三層 context
+context = get_full_context(branch, project_name="PROJECT_NAME")
+
+# 結構化數據可直接使用
+print(f"SSOT Doctrine: {context['ssot']['doctrine'][:200]}...")
+print(f"Flow Spec: {context['ssot']['flow_spec'][:200] if context['ssot']['flow_spec'] else 'N/A'}...")
+print(f"Related SSOT Nodes: {len(context['ssot']['related_nodes'])}")
+print(f"Related Code Files: {len(context['code']['related_files'])}")
+print(f"Related Memories: {len(context['memory'])}")
+print(f"Has Drift: {context['drift']['has_drift']}")
+
+# 或格式化為 Agent 可讀的 Markdown
+formatted = format_context_for_agent(context)
+print(formatted)
+
+# ⚠️ 如果有 Drift，需要在規劃時考慮
+if context['drift']['has_drift']:
+    print("⚠️ 發現 SSOT-Code 偏差，請在規劃時考慮是否需要先修復")
+    for d in context['drift']['drifts']:
+        print(f"  - [{d['type']}] {d['description']}")
+```
+
+**三層 Context 說明**：
+- **SSOT 層（意圖）**：Doctrine 核心原則 + Flow Spec + 相關 SSOT 節點
+- **Code Graph 層（現實）**：相關程式碼檔案 + 依賴關係
+- **Memory 層（經驗）**：過往相關記憶
+- **Drift**：SSOT 與 Code 的偏差警告
+
+**Branch 選擇原則**：
+- 如果任務明確屬於某個業務流程，指定 `flow_id`
+- 如果是全局性任務（如配置更新），可設 `branch = {}`
+- 不確定時，先查 `parse_index()` 了解有哪些 Flow/Domain
+
+### 3. 查詢策略記憶
 ```python
 # 在規劃任務前，先查詢相關策略和程序
 task_type = "unit test"  # 根據任務調整
-strategies = search_memory(f"{task_type} strategy", limit=3)
-procedures = search_memory(f"{task_type} procedure", limit=3)
+
+# 使用 branch 過濾，提高召回精度
+strategies = search_memory(
+    f"{task_type} strategy",
+    branch_flow=branch.get('flow_id') if branch else None,
+    limit=3
+)
+procedures = search_memory(
+    f"{task_type} procedure",
+    branch_flow=branch.get('flow_id') if branch else None,
+    limit=3
+)
 
 if strategies or procedures:
     print("## 相關策略 (來自記憶)")
@@ -96,16 +157,28 @@ if strategies or procedures:
     print("請依據上述策略進行任務分解。")
 ```
 
-### 3. 建立主任務
+### 4. 建立主任務
 ```python
+# 創建任務時帶上 branch 信息
 task_id = create_task(
     project="PROJECT_NAME",
     description="任務描述",
-    priority=8
+    priority=8,
+    branch=branch  # 關聯 Branch
 )
+
+# 被動建圖：記錄這次任務涉及的關係
+if branch and branch.get('flow_id'):
+    for domain_id in branch.get('domain_ids', []):
+        add_edge(
+            project="PROJECT_NAME",
+            from_id=branch['flow_id'],
+            to_id=domain_id,
+            kind='uses'
+        )
 ```
 
-### 4. 分解子任務
+### 5. 分解子任務
 ```python
 # 注意：第一個參數是 parent_id，不是 task_id
 subtask_1 = create_subtask(parent_id=task_id, description="子任務 1", priority=8)
@@ -114,12 +187,12 @@ subtask_3 = create_subtask(parent_id=task_id, description="子任務 3", depends
 subtask_4 = create_subtask(parent_id=task_id, description="子任務 4", depends_on=[subtask_2, subtask_3])
 ```
 
-### 5. 派發任務
+### 6. 派發任務
 建議使用 executor agent 執行：
 - 任務 ID: {subtask_id}
 - 描述: {description}
 
-### 6. Micro-Nap 觸發
+### 7. Micro-Nap 觸發
 當已處理 >5 個子任務或 context 變長時：
 
 ```python

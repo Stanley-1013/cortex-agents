@@ -1,6 +1,6 @@
 -- =============================================================================
 -- NEUROMORPHIC BRAIN DATABASE SCHEMA
--- Version: 1.0.0
+-- Version: 2.0.0 (Phase 2: Multi-person Collaboration)
 -- =============================================================================
 
 -- 任務管理
@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     requires_validation INTEGER DEFAULT 1,  -- 0=不需要, 1=需要驗證
     validation_status TEXT,  -- pending, approved, rejected, skipped
     validator_task_id TEXT,  -- 關聯的 critic 驗證任務 ID
+    -- Branch 關聯（Story 4: PFC Branch 選擇機制）
+    metadata TEXT,  -- JSON: {"branch": {"flow_id": "flow.auth", "domain_ids": ["domain.user"]}}
     -- 時間戳記
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     started_at TIMESTAMP,
@@ -66,7 +68,11 @@ CREATE TABLE IF NOT EXISTS long_term_memory (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     status TEXT DEFAULT 'active',
     superseded_by INTEGER REFERENCES long_term_memory(id),
-    last_validated TIMESTAMP
+    last_validated TIMESTAMP,
+    -- Branch 關聯欄位（Story 2: Memory 查詢增強）
+    branch_flow TEXT,      -- 關聯的 Flow ID，如 'flow.auth'
+    branch_domain TEXT,    -- 關聯的 Domain ID，如 'domain.user'
+    branch_page TEXT       -- 關聯的 Page ID，如 'page.login'
 );
 
 -- 情節記憶
@@ -121,6 +127,147 @@ CREATE INDEX IF NOT EXISTS idx_working_memory_key ON working_memory(key);
 CREATE INDEX IF NOT EXISTS idx_long_term_category ON long_term_memory(category);
 CREATE INDEX IF NOT EXISTS idx_long_term_status ON long_term_memory(status);
 CREATE INDEX IF NOT EXISTS idx_episodes_project ON episodes(project);
+-- Branch 索引（Story 2: Memory 查詢增強）
+CREATE INDEX IF NOT EXISTS idx_ltm_branch_flow ON long_term_memory(branch_flow);
+CREATE INDEX IF NOT EXISTS idx_ltm_branch_domain ON long_term_memory(branch_domain);
+
+-- =============================================================================
+-- Graph Overlay（Story 3: 輕量圖結構）
+-- =============================================================================
+
+-- Node: 專案裡的重要點（來自 L1 Index）
+CREATE TABLE IF NOT EXISTS project_nodes (
+    id TEXT NOT NULL,                -- e.g. 'flow.checkout', 'domain.order'
+    project TEXT NOT NULL,
+    kind TEXT NOT NULL,              -- 'flow'|'domain'|'api'|'page'|'file'|'test'
+    name TEXT NOT NULL,
+    ref TEXT,                        -- 例如 'flows/checkout.md'
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id, project)
+);
+
+-- Edge: 點與點之間的關係
+CREATE TABLE IF NOT EXISTS project_edges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project TEXT NOT NULL,
+    from_id TEXT NOT NULL,
+    to_id TEXT NOT NULL,
+    kind TEXT NOT NULL,              -- 'uses'|'implements'|'calls'|'covers'
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project, from_id, to_id, kind)
+);
+
+CREATE INDEX IF NOT EXISTS idx_edges_from ON project_edges(from_id);
+CREATE INDEX IF NOT EXISTS idx_edges_to ON project_edges(to_id);
+CREATE INDEX IF NOT EXISTS idx_edges_project ON project_edges(project);
+CREATE INDEX IF NOT EXISTS idx_nodes_project ON project_nodes(project);
+CREATE INDEX IF NOT EXISTS idx_nodes_kind ON project_nodes(kind);
+
+-- =============================================================================
+-- Task Node Access Tracking（Story 7: 熱點分析）
+-- =============================================================================
+
+-- 記錄任務執行過程中訪問的節點
+CREATE TABLE IF NOT EXISTS task_node_access (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project TEXT NOT NULL,
+    task_id TEXT,                    -- 關聯的任務 ID
+    node_id TEXT NOT NULL,           -- 訪問的節點 ID
+    agent TEXT NOT NULL,             -- 訪問的 agent（pfc, executor, critic）
+    access_type TEXT DEFAULT 'read', -- 'read'|'write'|'validate'
+    accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (task_id) REFERENCES tasks(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_node_access_project ON task_node_access(project);
+CREATE INDEX IF NOT EXISTS idx_node_access_node ON task_node_access(node_id);
+CREATE INDEX IF NOT EXISTS idx_node_access_time ON task_node_access(accessed_at);
+
+-- =============================================================================
+-- Type Registry（Story 8: 可擴展類型設計）
+-- =============================================================================
+-- 設計原則：Open-Closed Principle
+-- 新增類型只需 INSERT，不需改任何程式碼
+
+-- Node 類型註冊表
+CREATE TABLE IF NOT EXISTS node_kind_registry (
+    kind TEXT PRIMARY KEY,              -- e.g. 'file', 'function', 'api'
+    display_name TEXT NOT NULL,         -- UI 顯示名稱
+    description TEXT,                   -- 說明
+    icon TEXT,                          -- UI 圖示（可選）
+    color TEXT,                         -- UI 顏色（可選）
+    extractor TEXT,                     -- 負責提取的模組（可選）
+    is_builtin INTEGER DEFAULT 0,       -- 1=內建, 0=使用者新增
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Edge 類型註冊表
+CREATE TABLE IF NOT EXISTS edge_kind_registry (
+    kind TEXT PRIMARY KEY,              -- e.g. 'imports', 'calls', 'implements'
+    display_name TEXT NOT NULL,         -- UI 顯示名稱
+    description TEXT,                   -- 說明
+    source_kinds TEXT,                  -- JSON: 允許的 from_node kinds ["file", "function"]
+    target_kinds TEXT,                  -- JSON: 允許的 to_node kinds ["file", "module"]
+    is_directional INTEGER DEFAULT 1,   -- 1=有向, 0=無向
+    is_builtin INTEGER DEFAULT 0,       -- 1=內建, 0=使用者新增
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =============================================================================
+-- Code Graph（Story 9: 擴展 Graph Schema）
+-- =============================================================================
+-- 用途：從 AST 提取的程式碼結構圖（Reality Layer）
+-- 與 project_nodes/edges（SSOT Layer）分開
+
+-- Code Graph 節點（從 AST 解析）
+CREATE TABLE IF NOT EXISTS code_nodes (
+    id TEXT NOT NULL,                    -- e.g. 'func.validateToken'
+    project TEXT NOT NULL,
+    kind TEXT NOT NULL,                  -- 參照 node_kind_registry.kind
+    name TEXT NOT NULL,
+    signature TEXT,                      -- 函式簽名、類別定義
+    file_path TEXT,                      -- 源碼位置
+    line_start INTEGER,
+    line_end INTEGER,
+    language TEXT,                       -- 'typescript', 'python', 'go'
+    visibility TEXT,                     -- 'public', 'private', 'protected'
+    hash TEXT,                           -- 內容 hash（變更偵測）
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id, project)
+);
+
+-- Code Graph 邊（從 AST 解析）
+CREATE TABLE IF NOT EXISTS code_edges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project TEXT NOT NULL,
+    from_id TEXT NOT NULL,
+    to_id TEXT NOT NULL,
+    kind TEXT NOT NULL,                  -- 參照 edge_kind_registry.kind
+    line_number INTEGER,                 -- 關係發生位置
+    confidence REAL DEFAULT 1.0,         -- 推論關係的信心度
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project, from_id, to_id, kind)
+);
+
+-- 檔案 hash 追蹤（增量更新用）
+CREATE TABLE IF NOT EXISTS file_hashes (
+    project TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    hash TEXT NOT NULL,
+    node_count INTEGER DEFAULT 0,        -- 此檔案產出的 node 數
+    edge_count INTEGER DEFAULT 0,        -- 此檔案產出的 edge 數
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (project, file_path)
+);
+
+-- Code Graph 索引
+CREATE INDEX IF NOT EXISTS idx_code_nodes_project ON code_nodes(project);
+CREATE INDEX IF NOT EXISTS idx_code_nodes_kind ON code_nodes(kind);
+CREATE INDEX IF NOT EXISTS idx_code_nodes_file ON code_nodes(file_path);
+CREATE INDEX IF NOT EXISTS idx_code_edges_project ON code_edges(project);
+CREATE INDEX IF NOT EXISTS idx_code_edges_from ON code_edges(from_id);
+CREATE INDEX IF NOT EXISTS idx_code_edges_to ON code_edges(to_id);
+CREATE INDEX IF NOT EXISTS idx_file_hashes_project ON file_hashes(project);
 
 -- FTS 觸發器
 CREATE TRIGGER IF NOT EXISTS ltm_ai AFTER INSERT ON long_term_memory BEGIN

@@ -42,10 +42,12 @@ sys.path.insert(0, os.path.expanduser('~/.claude/neuromorphic'))
 # 先查看 API 簽名（避免參數錯誤）
 from servers.tasks import SCHEMA as TASKS_SCHEMA
 from servers.memory import SCHEMA as MEMORY_SCHEMA
+from servers.graph import SCHEMA as GRAPH_SCHEMA
 print(TASKS_SCHEMA)
 
-from servers.tasks import get_task, update_task_status, log_agent_action
+from servers.tasks import get_task, get_task_branch, update_task_status, log_agent_action
 from servers.memory import get_working_memory, set_working_memory, search_memory
+from servers.graph import add_edge
 
 # 讀取任務
 task = get_task(TASK_ID)
@@ -53,6 +55,9 @@ update_task_status(TASK_ID, 'running')
 
 # 載入相關 working_memory
 context = get_working_memory(task['parent_id'])
+
+# 取得任務的 branch 信息（用於被動建圖）
+branch = get_task_branch(TASK_ID) or get_task_branch(task.get('parent_id'))
 ```
 
 ### ⚠️ 常見參數錯誤提醒
@@ -105,6 +110,26 @@ result = f"完成 {task['description']}，處理了 {count} 筆"
 update_task_status(TASK_ID, 'done', result=result)
 log_agent_action('executor', TASK_ID, 'complete', result)
 
+# ⭐ 被動建圖：記錄任務執行中涉及的關係
+# 根據任務類型記錄不同的 edge
+if branch:
+    project = task.get('project', 'default')
+
+    # 如果任務涉及特定檔案，記錄 file 關係
+    # 例如：修改了 src/api/auth.ts，記錄 file -> flow 關係
+    if 'files_modified' in locals():
+        for file_path in files_modified:
+            file_node_id = f"file.{file_path.replace('/', '.')}"
+            if branch.get('flow_id'):
+                add_edge(project, file_node_id, branch['flow_id'], 'implements')
+
+    # 如果任務涉及 API，記錄 api -> domain 關係
+    if 'api_endpoints' in locals():
+        for api in api_endpoints:
+            api_node_id = f"api.{api.replace('/', '.')}"
+            for domain_id in branch.get('domain_ids', []):
+                add_edge(project, api_node_id, domain_id, 'belongs_to')
+
 print(f"""
 ## 任務完成
 
@@ -119,6 +144,44 @@ except Exception as e:
     update_task_status(TASK_ID, 'failed', error=str(e))
     log_agent_action('executor', TASK_ID, 'error', str(e))
 ```
+
+## 被動建圖（Passive Graph Building）
+
+在任務執行過程中，記錄你接觸到的檔案和 API，以便系統自動建立架構圖。
+
+### 記錄方式
+
+```python
+# 1. 追蹤修改的檔案
+files_modified = []  # 在任務開始時初始化
+
+# 執行任務時記錄
+files_modified.append('src/api/auth.ts')
+files_modified.append('src/utils/validation.ts')
+
+# 2. 追蹤涉及的 API
+api_endpoints = []  # 在任務開始時初始化
+
+# 執行任務時記錄
+api_endpoints.append('/api/auth/login')
+api_endpoints.append('/api/auth/logout')
+
+# 3. 結束時自動建圖（見結束流程）
+```
+
+### 建圖規則
+
+| 情況 | from_id | to_id | kind |
+|------|---------|-------|------|
+| 檔案實作 Flow | `file.src.api.auth` | `flow.auth` | implements |
+| API 屬於 Domain | `api./api/auth/login` | `domain.user` | belongs_to |
+| 測試涵蓋 Flow | `test.auth.spec` | `flow.auth` | covers |
+
+### 最小化記錄原則
+
+- 只記錄**直接相關**的關係
+- 不需記錄推論關係（由 Graph 查詢時推導）
+- 檔案路徑使用相對路徑
 
 ## 輸出格式
 
