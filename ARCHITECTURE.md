@@ -284,6 +284,112 @@ register_node_kind('component', '元件', 'React/Vue 元件')
 
 ---
 
+## 團隊協作指南
+
+本系統設計支援從**個人開發**平滑演進到**團隊協作**，無需更換基礎設施。
+
+### 個人模式 vs 團隊模式
+
+| 資料層 | 個人模式 | 團隊模式 | 說明 |
+|--------|---------|---------|------|
+| **SSOT** (Markdown) | 本地編輯 | Git 同步 + PR 審核 | 唯一需要同步的層 |
+| **Code Graph** | 本地建構 | 各自建構 | 確定性：同樣程式碼 → 同樣 Graph |
+| **Memory** (brain.db) | 個人資料庫 | 個人資料庫 | **永不同步**，保護隱私 |
+| **Task Queue** | 個人任務 | 可選共享 | 視團隊需求而定 |
+
+### 資料同步策略
+
+#### 同步層（團隊共享，Git 版控）
+
+```
+brain/ssot/
+├── PROJECT_DOCTRINE.md   # 共同價值觀與約束
+├── PROJECT_INDEX.md      # 系統導航目錄
+├── flows/                # Flow 規格定義
+└── domains/              # Domain 規格定義
+```
+
+**為什麼這些同步？** 它們定義「專案應該怎樣」，是團隊共識的源頭。
+
+#### 隔離層（個人私有，不同步）
+
+```
+brain/brain.db            # 包含：
+├── long_term_memory      # 個人學習、偏好
+├── working_memory        # 當前工作狀態
+└── task_queue            # 個人任務（除非選擇共享）
+```
+
+**為什麼隔離？**
+1. **隱私保護**：學習紀錄可能包含敏感資訊
+2. **避免衝突**：每人的工作記憶會頻繁變動
+3. **簡化架構**：無需處理複雜的資料庫合併
+
+### 衝突處理原則
+
+| 類型 | 處理方式 | 理由 |
+|------|----------|------|
+| SSOT 衝突 | Git merge + 人工審核 | 意圖變更需要人類決策 |
+| Code Graph 衝突 | 不存在 | 各自從程式碼重建，確定性 |
+| Memory 衝突 | 不存在 | 個人隔離 |
+
+### 團隊擴展路徑
+
+#### 1️⃣ 個人開發 (1 人)
+
+```
+你的機器
+├── ~/.claude/neuromorphic/brain/brain.db     # 你的記憶
+└── ~/your-project/brain/ssot/                # 本地 SSOT
+```
+
+- 所有資料在本地
+- 無需任何同步設定
+
+#### 2️⃣ 小團隊 (2-5 人)
+
+```
+Git Repository (共享)
+└── brain/ssot/           # SSOT 由 Git 管理
+
+每個人的機器
+└── ~/.claude/neuromorphic/brain/brain.db     # 各自的記憶
+```
+
+**關鍵實踐：**
+- SSOT 變更需 PR 審核
+- 定期執行 `check_drift()` 偵測偏差
+- 記憶不跨人同步，但可導出分享（如最佳實踐）
+
+#### 3️⃣ 大團隊 (5+ 人)
+
+```
+Git Repository (共享)
+└── brain/ssot/
+    ├── flows/auth/       # 按 Flow 拆分 SSOT
+    ├── flows/payment/
+    └── flows/user/
+
+可選：共享 Task Server
+└── 團隊任務看板（需額外建設）
+```
+
+**關鍵實踐：**
+- SSOT 按 Flow 模組化，減少合併衝突
+- 考慮設置共享 Task Server（超出本系統範圍）
+- 建立 SSOT 變更的自動 Critic 驗證
+
+### 設計決策記錄 (ADR)
+
+| ID | 決策 | 理由 |
+|----|------|------|
+| ADR-001 | 記憶不同步 | 保護隱私、避免複雜合併邏輯 |
+| ADR-002 | Code Graph 本地建構 | 確定性、無需共享基礎設施 |
+| ADR-003 | SSOT 用 Git 同步 | 成熟方案、版本追溯、PR 審核 |
+| ADR-004 | SQLite 而非中央 DB | 零配置、離線可用、跨專案共享 |
+
+---
+
 ## Facade API（統一入口）
 
 ```python

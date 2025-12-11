@@ -283,6 +283,116 @@ validation = validate_with_graph(modified_files, branch, project)
 print(format_validation_report(validation))
 ```
 
+---
+
+## 給團隊負責人
+
+本節面向**人類團隊負責人**，說明如何在團隊中導入本系統。
+
+### 初始化團隊專案
+
+#### 1. 建立共享 SSOT 結構
+
+```bash
+# 在專案中建立 SSOT 目錄
+mkdir -p brain/ssot/flows brain/ssot/domains
+
+# 初始化核心文件
+touch brain/ssot/PROJECT_DOCTRINE.md
+touch brain/ssot/PROJECT_INDEX.md
+```
+
+#### 2. 定義 PROJECT_DOCTRINE.md
+
+這是團隊的「北極星」，應包含：
+
+```markdown
+# Project Doctrine
+
+## 專案目標
+[簡述專案目的]
+
+## 關鍵約束
+
+### Hard Rules（違反即阻擋）
+- [ ] 必須有測試覆蓋
+- [ ] API 變更需審核
+
+### Soft Rules（違反需說明理由）
+- [ ] 優先使用既有模組
+- [ ] 避免直接操作資料庫
+
+## 技術棧
+- Language: ...
+- Framework: ...
+```
+
+#### 3. 設定 .gitignore
+
+確保個人記憶不被提交：
+
+```gitignore
+# 個人記憶資料庫（不同步）
+brain/brain.db
+brain/*.backup.*
+```
+
+### 團隊工作流程
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  1. 拉取最新 SSOT                                        │
+│     git pull origin main                                 │
+├─────────────────────────────────────────────────────────┤
+│  2. 開發者使用 Agent 系統工作                             │
+│     - PFC 規劃 → Executor 執行 → Critic 驗證             │
+│     - 個人記憶在本地 brain.db 累積                        │
+├─────────────────────────────────────────────────────────┤
+│  3. 修改 SSOT 時，提交 PR                                 │
+│     git checkout -b feature/update-flow-auth            │
+│     # 修改 brain/ssot/flows/auth.md                     │
+│     git commit -m "feat: 更新 auth flow 規格"           │
+│     gh pr create                                         │
+├─────────────────────────────────────────────────────────┤
+│  4. PR 審核（可選：自動 Critic 驗證）                     │
+│     - 人工審核 SSOT 變更                                  │
+│     - 執行 check_drift() 確認無重大偏差                   │
+├─────────────────────────────────────────────────────────┤
+│  5. 合併後，團隊 git pull 同步                            │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 團隊最佳實踐
+
+| 實踐 | 說明 |
+|------|------|
+| **SSOT 變更需 PR** | 意圖變更影響全團隊，需審核 |
+| **定期 Drift 偵測** | 每週或每次發布前檢查 SSOT-Code 偏差 |
+| **記憶可選擇性分享** | 導出有價值的 pattern/lesson 給團隊（手動） |
+| **不強制同步 brain.db** | 保護個人隱私，避免衝突 |
+
+### 常見問題
+
+**Q: 新成員如何加入？**
+1. Clone 專案（包含 SSOT）
+2. 安裝 neuromorphic 系統
+3. 開始工作，個人 brain.db 會自動建立
+
+**Q: 如何分享有價值的記憶？**
+```python
+from servers.memory import retrieve_memories
+
+# 導出特定 pattern
+patterns = retrieve_memories(category='pattern', project='my-project')
+# 手動整理後分享給團隊（例如加入 SSOT 或 wiki）
+```
+
+**Q: SSOT 衝突怎麼辦？**
+- 使用 Git merge 解決
+- 衝突表示團隊對「應該怎樣」有分歧，需討論
+
+---
+
 ## 最佳實踐
 
 1. **並行派發** - 使用多個 Task tool 同時執行獨立任務
