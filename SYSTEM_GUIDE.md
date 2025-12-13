@@ -55,6 +55,17 @@ subtask_1 = create_subtask(task_id, "子任務 1", assigned_agent='executor')
 subtask_2 = create_subtask(task_id, "子任務 2", depends_on=[subtask_1])
 ```
 
+### 系統更新
+
+從 GitHub 拉取最新版本：
+
+```bash
+cd ~/.claude/neuromorphic
+git pull
+```
+
+> 本地的 `brain.db` 不會被覆蓋（已在 `.gitignore`）。
+
 ---
 
 ## 專案初始化 SOP
