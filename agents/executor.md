@@ -102,26 +102,68 @@ print(f"找到 {len(filtered)} 筆符合條件")
 set_working_memory(task['parent_id'], 'filtered_data', filtered)
 ```
 
-## 結束流程
+## 結束流程（⚠️ Hook 自動處理）
+
+**重要**：`finish_task()` 由 PostToolUse Hook 自動呼叫，Executor 不需要手動呼叫。
+
+### Executor 只需要：
+1. **完成任務** - 執行指定的工作
+2. **輸出結果** - 輸出執行結果供 Hook 和主對話參考
+
+### Hook 會自動：
+- 記錄 `executor_agent_id`（用於 resume）
+- 呼叫 `finish_task(success=True)`
+- 推進 phase 到 `validation`
+
+### 輸出範例
+
+```markdown
+## 執行結果
+
+**任務 ID**: {TASK_ID}
+**狀態**: ✅ 完成
+
+### 結果摘要
+{執行了什麼、產出了什麼}
+
+### 產出
+- working_memory key: {key_name}
+- 修改檔案: {file_list}
+```
+
+### 異常處理
+
+如果任務執行失敗，仍然輸出結果：
+
+```markdown
+## 執行結果
+
+**任務 ID**: {TASK_ID}
+**狀態**: ❌ 失敗
+
+### 錯誤
+{error_message}
+
+### 已完成部分
+{partial_results}
+```
+
+> **注意**：即使失敗，Hook 仍會推進到 validation phase。
+> Critic 會判斷是否需要退回重做。
+
+### 被動建圖（可選）
 
 ```python
-# 成功
-result = f"完成 {task['description']}，處理了 {count} 筆"
-update_task_status(TASK_ID, 'done', result=result)
-log_agent_action('executor', TASK_ID, 'complete', result)
-
 # ⭐ 被動建圖：記錄任務執行中涉及的關係
 # 根據任務類型記錄不同的 edge
 if branch:
     project = task.get('project', 'default')
 
     # 如果任務涉及特定檔案，記錄 file 關係
-    # 例如：修改了 src/api/auth.ts，記錄 file -> flow 關係
     if 'files_modified' in locals():
         for file_path in files_modified:
             file_node_id = f"file.{file_path.replace('/', '.')}"
             if branch.get('flow_id'):
-                # add_edge(from_id, to_id, kind, project)
                 add_edge(file_node_id, branch['flow_id'], 'implements', project)
 
     # 如果任務涉及 API，記錄 api -> domain 關係
@@ -129,22 +171,7 @@ if branch:
         for api in api_endpoints:
             api_node_id = f"api.{api.replace('/', '.')}"
             for domain_id in branch.get('domain_ids', []):
-                # add_edge(from_id, to_id, kind, project)
                 add_edge(api_node_id, domain_id, 'belongs_to', project)
-
-print(f"""
-## 任務完成
-
-**任務 ID**: {TASK_ID}
-**結果**: {result}
-
-已儲存到資料庫。
-""")
-
-# 失敗
-except Exception as e:
-    update_task_status(TASK_ID, 'failed', error=str(e))
-    log_agent_action('executor', TASK_ID, 'error', str(e))
 ```
 
 ## 被動建圖（Passive Graph Building）
@@ -185,17 +212,3 @@ api_endpoints.append('/api/auth/logout')
 - 不需記錄推論關係（由 Graph 查詢時推導）
 - 檔案路徑使用相對路徑
 
-## 輸出格式
-
-```markdown
-## 執行結果
-
-**任務 ID**: {task_id}
-**狀態**: ✅ 完成 / ❌ 失敗
-
-### 結果摘要
-{result_summary}
-
-### 產出
-- working_memory key: {key_name}
-```

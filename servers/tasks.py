@@ -32,7 +32,18 @@ create_subtask(parent_id, description, assigned_agent='executor', depends_on=Non
     建立子任務（可指定是否需要驗證）
 
 get_task(task_id) -> Dict
-    取得任務詳情（包含 metadata 和 branch）
+    取得任務詳情（包含 metadata, branch, executor_agent_id, rejection_count）
+
+update_task(task_id, **kwargs) -> None
+    更新任務的任意欄位（用於生命週期管理）
+
+    Allowed fields:
+        - executor_agent_id: 執行者的 agentId（用於 resume）
+        - rejection_count: 被 Critic reject 的次數
+        - status, result, error_message, phase, validation_status, validator_task_id
+
+    Example:
+        update_task(task_id, executor_agent_id='abc123', rejection_count=1)
 
 update_task_status(task_id, status, result=None, error=None) -> None
     更新任務狀態 ('pending', 'running', 'done', 'failed', 'blocked')
@@ -169,7 +180,7 @@ def get_task(task_id: str) -> Optional[Dict]:
                assigned_agent, result, error_message, retry_count,
                created_at, started_at, completed_at,
                phase, requires_validation, validation_status, validator_task_id,
-               metadata
+               metadata, executor_agent_id, rejection_count
         FROM tasks WHERE id = ?
     ''', (task_id,))
 
@@ -206,9 +217,55 @@ def get_task(task_id: str) -> Optional[Dict]:
             'validation_status': row[15],
             'validator_task_id': row[16],
             'metadata': metadata,
-            'branch': branch
+            'branch': branch,
+            'executor_agent_id': row[18],
+            'rejection_count': row[19] or 0
         }
     return None
+
+
+def update_task(task_id: str, **kwargs) -> None:
+    """更新任務的任意欄位
+
+    Args:
+        task_id: 任務 ID
+        **kwargs: 要更新的欄位，例如：
+            - executor_agent_id: 執行者的 agentId
+            - rejection_count: 被 reject 的次數
+            - status: 任務狀態
+            - result: 執行結果
+            - phase: 任務階段
+
+    Example:
+        update_task(task_id, executor_agent_id='abc123', rejection_count=1)
+    """
+    if not kwargs:
+        return
+
+    # 允許更新的欄位白名單
+    allowed_fields = {
+        'executor_agent_id', 'rejection_count', 'status', 'result',
+        'error_message', 'phase', 'validation_status', 'validator_task_id'
+    }
+
+    # 過濾不允許的欄位
+    updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
+    if not updates:
+        return
+
+    db = get_db()
+    cursor = db.cursor()
+
+    # 構建 UPDATE 語句
+    set_clause = ', '.join([f'{k} = ?' for k in updates.keys()])
+    values = list(updates.values()) + [task_id]
+
+    cursor.execute(f'''
+        UPDATE tasks SET {set_clause} WHERE id = ?
+    ''', values)
+
+    db.commit()
+    db.close()
 
 def update_task_status(task_id: str, status: str,
                        result: str = None, error: str = None) -> None:
@@ -625,8 +682,34 @@ def _ensure_metadata_column():
     db.close()
 
 
+def _ensure_lifecycle_columns():
+    """確保 tasks 表有任務生命週期相關欄位
+
+    新增欄位：
+    - executor_agent_id: 執行者的 agentId（用於 resume）
+    - rejection_count: 被 Critic reject 的次數
+    """
+    db = get_db()
+    cursor = db.cursor()
+
+    # 檢查欄位是否存在
+    cursor.execute("PRAGMA table_info(tasks)")
+    columns = [row[1] for row in cursor.fetchall()]
+
+    if 'executor_agent_id' not in columns:
+        cursor.execute('ALTER TABLE tasks ADD COLUMN executor_agent_id TEXT')
+        db.commit()
+
+    if 'rejection_count' not in columns:
+        cursor.execute('ALTER TABLE tasks ADD COLUMN rejection_count INTEGER DEFAULT 0')
+        db.commit()
+
+    db.close()
+
+
 # 初始化時確保欄位存在
 _ensure_metadata_column()
+_ensure_lifecycle_columns()
 
 
 __all__ = [
@@ -634,6 +717,7 @@ __all__ = [
     'create_task',
     'create_subtask',
     'get_task',
+    'update_task',
     'update_task_status',
     'get_next_task',
     'get_task_progress',

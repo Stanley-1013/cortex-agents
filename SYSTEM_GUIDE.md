@@ -287,26 +287,180 @@ from servers.tasks import (
 # 階段: execution, validation, documentation, completed
 ```
 
-### 驗證循環（重要）
+### 任務生命週期管理（⭐ Hook 自動處理）
+
+任務狀態更新和驗證循環透過 **PostToolUse Hook** 自動執行，確保流程完整。
+
+#### 核心設計：框架層控制
+
+```
+┌─────────────────────────────────────────────────────┐
+│  確定性來自「框架層控制」，不是「agent 自律」          │
+│                                                     │
+│  • CrewAI: Task 完成 → 框架觸發 callback           │
+│  • LangGraph: Node 完成 → Reducer 執行             │
+│  • Claude Code: Task 完成 → PostToolUse Hook        │
+└─────────────────────────────────────────────────────┘
+```
+
+#### Hook 機制流程
+
+```
+主對話 → Task(executor, TASK_ID=xxx)
+              ↓
+        Executor 執行任務
+              ↓
+        Executor 結束（輸出結果）
+              ↓
+    ┌─────────────────────────────────┐
+    │  PostToolUse Hook 自動觸發      │
+    │  • 記錄 agentId                 │
+    │  • 呼叫 finish_task()           │
+    │  • Phase → validation           │
+    └─────────────────────────────────┘
+              ↓
+主對話 → Task(critic, ORIGINAL_TASK_ID=xxx)
+              ↓
+        Critic 輸出 "驗證結果: APPROVED/CONDITIONAL/REJECTED"
+              ↓
+    ┌─────────────────────────────────────────────────────────┐
+    │  PostToolUse Hook 自動觸發                              │
+    │                                                         │
+    │  APPROVED:                                              │
+    │  • finish_validation(approved=True)                     │
+    │  • Phase → documentation                                │
+    │                                                         │
+    │  CONDITIONAL:                                           │
+    │  • finish_validation(approved=True)  ← 視為通過         │
+    │  • 建議存入 working_memory['critic_suggestions']         │
+    │  • 輸出 additionalContext 提醒主對話                     │
+    │                                                         │
+    │  REJECTED:                                              │
+    │  • finish_validation(approved=False)                    │
+    │  • Phase → execution（退回重做）                         │
+    └─────────────────────────────────────────────────────────┘
+```
+
+#### 主對話的職責（簡化）
+
+主對話只需要：
+1. **派發 subagent** - 使用 Task tool
+2. **傳遞 TASK_ID** - 在 prompt 中包含 `TASK_ID = "xxx"`
+3. **處理 CONDITIONAL** - 收到 Hook 提醒時處理建議
+
+Hook 自動處理：
+- ✅ 記錄 agentId（用於 resume）
+- ✅ 呼叫 finish_task()
+- ✅ 呼叫 finish_validation()
+- ✅ 推進任務 phase
+- ✅ 存儲 CONDITIONAL 建議
+
+#### Executor 派發格式
 
 ```python
-from servers.tasks import get_unvalidated_tasks, mark_validated, get_validation_summary
+Task(
+    subagent_type='executor',
+    prompt=f'''
+TASK_ID = "{task_id}"
 
-# 1. 取得待驗證任務
-unvalidated = get_unvalidated_tasks(parent_task_id)
-
-# 2. 對每個任務派發 Critic
-for task in unvalidated:
-    # 使用 Task tool 派發 critic agent 驗證
-    pass
-
-# 3. Critic 完成後標記
-mark_validated(task_id, 'approved', validator_task_id='critic_xxx')
-
-# 4. 查看驗證統計
-summary = get_validation_summary(parent_task_id)
-# {'total': 26, 'approved': 20, 'rejected': 2, 'pending': 4, ...}
+任務描述：...
+'''
+)
+# Hook 自動：記錄 agentId + 呼叫 finish_task()
 ```
+
+#### Critic 派發格式
+
+```python
+Task(
+    subagent_type='critic',
+    prompt=f'''
+TASK_ID = "{critic_task_id}"
+ORIGINAL_TASK_ID = "{original_task_id}"
+
+驗證對象：...
+'''
+)
+# Hook 自動：解析 APPROVED/CONDITIONAL/REJECTED + 呼叫 finish_validation()
+```
+
+#### 處理 CONDITIONAL 驗證結果
+
+當 Critic 輸出 CONDITIONAL 時，Hook 會：
+1. 將建議存入 `working_memory['critic_suggestions']`
+2. 輸出 `additionalContext` 提醒主對話
+
+主對話收到提醒後，可以選擇：
+```python
+# 1. 讀取建議
+from servers.memory import get_working_memory
+suggestions = get_working_memory(original_task_id, 'critic_suggestions')
+
+# 2. 選擇處理方式
+# a) 自己直接修改
+# b) 派發新 Executor 改進
+# c) 忽略（如果是 LOW 嚴重程度）
+```
+
+#### 主對話處理 Reject（Resume Executor）
+
+```python
+# Critic reject 時，任務會被退回 execution phase
+# 主對話可以 resume 原 Executor
+from servers.tasks import get_task
+task = get_task(original_task_id)
+
+if task.get('executor_agent_id'):
+    Task(
+        subagent_type='executor',
+        resume=task['executor_agent_id'],  # ⭐ Resume 原 Executor
+        prompt=f"""
+        被 Critic reject，請根據反饋修復：
+        - 第 {task.get('retry_count', 1)} 次重做
+        """
+    )
+```
+
+#### PFC 驗證循環（run_validation_cycle）
+
+```python
+from servers.facade import run_validation_cycle
+
+# ⭐ PFC 使用此 API 查詢待驗證任務，然後輸出派發指令給主對話
+validation = run_validation_cycle(
+    parent_id=task_id,
+    mode='normal'  # 'normal' | 'batch_approve' | 'batch_skip' | 'sample'
+)
+
+# validation: {
+#   'total': 5,
+#   'pending_validation': [task_id_1, task_id_2, ...],  # 需派發 Critic
+#   'message': str
+# }
+
+# PFC 輸出派發指令，由主對話執行 Task tool
+```
+
+#### 人類手動驗證（繞過 Critic）
+
+```python
+from servers.facade import manual_validate
+
+manual_validate(
+    task_id=TASK_ID,
+    status='approved',  # 'approved' | 'rejected' | 'skipped'
+    reviewer='human:alice'
+)
+```
+
+#### 驗證模式
+
+| 模式 | 用途 | 行為 |
+|------|------|------|
+| `normal` | 標準流程（預設） | 每個任務派發 Critic |
+| `batch_approve` | 緊急 hotfix | 全部標記 approved |
+| `batch_skip` | 實驗性任務 | 全部標記 skipped |
+| `sample` | 批量任務 | 只驗證前 N 個 |
 
 ### 記憶管理 (memory.py)
 

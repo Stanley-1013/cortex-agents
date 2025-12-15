@@ -85,6 +85,39 @@ validate_with_graph(modified_files, branch, project_name=None) -> Dict
 format_validation_report(validation) -> str
     將 validate_with_graph 結果格式化為 Markdown 報告
 
+## 任務生命週期管理（強制機制）
+
+finish_task(task_id, success, result=None, error=None, skip_validation=False) -> Dict
+    Executor 結束任務時必須呼叫
+    - 自動更新 status, phase
+    - 回傳 next_action 建議
+    - 注意：executor_agent_id 由主對話在派發後記錄
+
+    Example:
+        result = finish_task(task_id, success=True, result='完成')
+        # {'status': 'done', 'phase': 'validation', 'next_action': 'await_validation'}
+
+finish_validation(task_id, original_task_id, approved, issues=None, suggestions=None) -> Dict
+    Critic 結束驗證時必須呼叫
+    - 自動更新驗證狀態
+    - rejected 時回傳 resume 指令
+
+    Example:
+        result = finish_validation(critic_id, task_id, approved=False, issues=['覆蓋率不足'])
+        # {'status': 'rejected', 'next_action': 'resume_executor', 'resume_agent_id': 'xxx'}
+
+run_validation_cycle(parent_id, mode='normal', sample_count=3) -> Dict
+    PFC 執行驗證循環
+    - mode: 'normal' | 'batch_approve' | 'batch_skip' | 'sample'
+    - 回傳待驗證任務列表
+
+    Example:
+        result = run_validation_cycle(parent_id, mode='sample', sample_count=3)
+        # {'pending_validation': ['task1', 'task2'], 'approved': 5}
+
+manual_validate(task_id, status, reviewer) -> Dict
+    人類手動驗證（繞過 Critic）
+
 ## Drift 偵測
 
 check_drift(project_name, flow_id=None) -> DriftReport
@@ -1030,3 +1063,427 @@ def quick_status() -> str:
         return "\n".join(lines)
     except Exception as e:
         return f"Error: {str(e)}"
+
+
+# =============================================================================
+# Task Lifecycle Management（任務生命週期強制機制）
+# =============================================================================
+
+# 最大重試次數
+MAX_RETRIES = 3
+
+
+def finish_task(
+    task_id: str,
+    success: bool,
+    result: str = None,
+    error: str = None,
+    skip_validation: bool = False
+) -> Dict:
+    """
+    任務結束的標準流程（強制執行）
+
+    Executor 完成任務時必須呼叫此函數，自動處理：
+    1. 更新 task.status
+    2. 記錄 agent_log
+    3. 推進 task.phase
+
+    注意：executor_agent_id 由主對話在派發後記錄，不由 Executor 自己記錄。
+
+    Args:
+        task_id: 任務 ID
+        success: 是否成功
+        result: 成功結果描述
+        error: 失敗原因
+        skip_validation: Opt-out 開關 - 跳過驗證階段
+
+    Returns:
+        {
+            'status': 'done' | 'failed',
+            'phase': 'validation' | 'documentation' | 'execution',
+            'next_action': 'await_validation' | 'proceed' | 'retry',
+            'message': str
+        }
+
+    Example:
+        # Executor 結束時
+        result = finish_task(
+            task_id='abc123',
+            success=True,
+            result='完成測試撰寫，新增 5 個測試案例'
+        )
+    """
+    from servers.tasks import (
+        get_task, update_task_status,
+        advance_task_phase, log_agent_action
+    )
+
+    # 取得任務
+    task = get_task(task_id)
+    if not task:
+        return {
+            'status': 'error',
+            'phase': None,
+            'next_action': 'check_task_id',
+            'message': f"Task not found: {task_id}"
+        }
+
+    # 1. 更新狀態
+    if success:
+        update_task_status(task_id, 'done', result=result)
+        status = 'done'
+    else:
+        update_task_status(task_id, 'failed', error=error)
+        status = 'failed'
+
+    # 2. 記錄 log
+    action = 'complete' if success else 'failed'
+    message = result if success else error
+    log_agent_action('executor', task_id, action, message or '')
+
+    # 4. 決定下一步
+    if not success:
+        return {
+            'status': status,
+            'phase': task.get('phase', 'execution'),
+            'next_action': 'retry',
+            'message': f"Task failed: {error}"
+        }
+
+    # 5. 推進 phase
+    requires_validation = task.get('requires_validation', True)
+
+    if skip_validation or not requires_validation:
+        # 跳過驗證，直接到 documentation
+        advance_task_phase(task_id, 'documentation')
+        log_agent_action('system', task_id, 'skip_validation',
+                        f"skip_validation={skip_validation}, requires_validation={requires_validation}")
+        return {
+            'status': status,
+            'phase': 'documentation',
+            'next_action': 'proceed',
+            'message': 'Task completed, validation skipped'
+        }
+    else:
+        # 需要驗證
+        advance_task_phase(task_id, 'validation')
+        return {
+            'status': status,
+            'phase': 'validation',
+            'next_action': 'await_validation',
+            'message': 'Task completed, awaiting validation'
+        }
+
+
+def finish_validation(
+    task_id: str,
+    original_task_id: str,
+    approved: bool,
+    issues: List[str] = None,
+    suggestions: List[str] = None
+) -> Dict:
+    """
+    Critic 驗證結束的標準流程（強制執行）
+
+    Critic 完成驗證時必須呼叫此函數，自動處理：
+    1. 更新 Critic 任務狀態為 done
+    2. 呼叫 mark_validated() 更新原任務
+    3. 如果 rejected，回傳 resume 指令
+
+    Args:
+        task_id: Critic 任務 ID
+        original_task_id: 被驗證的原任務 ID
+        approved: 是否通過
+        issues: 發現的問題列表
+        suggestions: 改進建議
+
+    Returns:
+        若 approved:
+            {
+                'status': 'approved',
+                'original_task_phase': 'documentation',
+                'next_action': 'proceed',
+                'message': str
+            }
+        若 rejected:
+            {
+                'status': 'rejected',
+                'original_task_phase': 'execution',
+                'next_action': 'resume_executor',
+                'resume_agent_id': str,  # 原 Executor 的 agentId
+                'rejection_context': {
+                    'issues': [...],
+                    'suggestions': [...],
+                    'retry_count': int
+                },
+                'message': str
+            }
+        若超過重試次數:
+            {
+                'status': 'blocked',
+                'next_action': 'human_review',
+                'message': str
+            }
+
+    Example:
+        # Critic 驗證通過
+        result = finish_validation(
+            task_id='critic-001',
+            original_task_id='task-abc',
+            approved=True
+        )
+
+        # Critic 驗證不通過
+        result = finish_validation(
+            task_id='critic-002',
+            original_task_id='task-xyz',
+            approved=False,
+            issues=['測試覆蓋率只有 60%', '缺少邊界測試'],
+            suggestions=['新增 edge case 測試', '提高覆蓋率到 80%']
+        )
+
+        # PFC 根據 result['next_action'] 決定下一步
+        if result['next_action'] == 'resume_executor':
+            # Resume 原 Executor
+            Task(resume=result['resume_agent_id'], prompt=f"修復問題: {result['rejection_context']}")
+    """
+    import json
+    from servers.tasks import (
+        get_task, update_task, update_task_status,
+        advance_task_phase, mark_validated, log_agent_action
+    )
+
+    # 取得原任務
+    original_task = get_task(original_task_id)
+    if not original_task:
+        return {
+            'status': 'error',
+            'next_action': 'check_task_id',
+            'message': f"Original task not found: {original_task_id}"
+        }
+
+    # 1. 更新 Critic 任務狀態
+    update_task_status(task_id, 'done', result=f"Validation: {'approved' if approved else 'rejected'}")
+
+    # 2. 處理驗證結果
+    if approved:
+        # 標記通過
+        mark_validated(original_task_id, 'approved', validator_task_id=task_id)
+        advance_task_phase(original_task_id, 'documentation')
+
+        log_agent_action('critic', original_task_id, 'approved', 'Validation passed')
+
+        return {
+            'status': 'approved',
+            'original_task_phase': 'documentation',
+            'next_action': 'proceed',
+            'message': f"Task {original_task_id} validation passed"
+        }
+
+    else:
+        # 標記 rejected
+        executor_agent_id = original_task.get('executor_agent_id')
+        retry_count = (original_task.get('rejection_count') or 0) + 1
+
+        # 檢查重試次數
+        if retry_count >= MAX_RETRIES:
+            update_task_status(original_task_id, 'blocked',
+                              error=f'Exceeded {MAX_RETRIES} validation retries')
+            mark_validated(original_task_id, 'rejected', validator_task_id=task_id)
+
+            log_agent_action('critic', original_task_id, 'blocked',
+                            f'Exceeded {MAX_RETRIES} retries, needs human review')
+
+            return {
+                'status': 'blocked',
+                'next_action': 'human_review',
+                'message': f"Task {original_task_id} exceeded {MAX_RETRIES} retries, needs human review"
+            }
+
+        # 更新任務狀態
+        update_task(original_task_id, rejection_count=retry_count)
+        update_task_status(original_task_id, 'pending')
+        advance_task_phase(original_task_id, 'execution')
+        mark_validated(original_task_id, 'rejected', validator_task_id=task_id)
+
+        # 記錄 log
+        log_agent_action('critic', original_task_id, 'rejected',
+                        json.dumps({'issues': issues or [], 'suggestions': suggestions or []}))
+
+        return {
+            'status': 'rejected',
+            'original_task_phase': 'execution',
+            'next_action': 'resume_executor',
+            'resume_agent_id': executor_agent_id,
+            'rejection_context': {
+                'issues': issues or [],
+                'suggestions': suggestions or [],
+                'retry_count': retry_count
+            },
+            'message': f"Task {original_task_id} rejected (attempt {retry_count}/{MAX_RETRIES})"
+        }
+
+
+def run_validation_cycle(
+    parent_id: str,
+    mode: str = 'normal',
+    sample_count: int = 3
+) -> Dict:
+    """
+    執行一輪驗證循環
+
+    PFC 在階段完成後呼叫，自動處理：
+    1. 抓取待驗證任務
+    2. 根據 mode 決定如何驗證
+    3. 回傳驗證狀態
+
+    Args:
+        parent_id: 父任務 ID
+        mode: 驗證模式
+            - 'normal': 對每個任務派發 Critic（預設）
+            - 'batch_approve': 批量自動通過（緊急情況）
+            - 'batch_skip': 批量跳過驗證
+            - 'sample': 只抽樣驗證前 N 個，其餘 auto-approve
+        sample_count: sample 模式時驗證的數量
+
+    Returns:
+        {
+            'total': int,
+            'validated': int,
+            'approved': int,
+            'rejected': int,
+            'skipped': int,
+            'pending_validation': [task_id, ...],  # 需要派發 Critic 的任務
+            'message': str
+        }
+
+    Example:
+        # 標準驗證
+        result = run_validation_cycle(parent_id='task-main')
+
+        # 緊急情況批量通過
+        result = run_validation_cycle(parent_id='task-main', mode='batch_approve')
+
+        # 抽樣驗證
+        result = run_validation_cycle(parent_id='task-main', mode='sample', sample_count=5)
+    """
+    from servers.tasks import (
+        get_unvalidated_tasks, get_validation_summary,
+        mark_validated, log_agent_action
+    )
+
+    # 取得待驗證任務
+    unvalidated = get_unvalidated_tasks(parent_id)
+
+    result = {
+        'total': len(unvalidated),
+        'validated': 0,
+        'approved': 0,
+        'rejected': 0,
+        'skipped': 0,
+        'pending_validation': [],
+        'message': ''
+    }
+
+    if not unvalidated:
+        result['message'] = 'No tasks pending validation'
+        return result
+
+    # 根據 mode 處理
+    if mode == 'batch_approve':
+        # 批量自動通過
+        for task in unvalidated:
+            mark_validated(task['id'], 'approved', validator_task_id='system:batch_approve')
+            log_agent_action('system', task['id'], 'batch_approve', 'Auto-approved in batch mode')
+            result['approved'] += 1
+            result['validated'] += 1
+        result['message'] = f"Batch approved {result['approved']} tasks"
+
+    elif mode == 'batch_skip':
+        # 批量跳過
+        for task in unvalidated:
+            mark_validated(task['id'], 'skipped', validator_task_id='system:batch_skip')
+            log_agent_action('system', task['id'], 'batch_skip', 'Skipped in batch mode')
+            result['skipped'] += 1
+            result['validated'] += 1
+        result['message'] = f"Batch skipped {result['skipped']} tasks"
+
+    elif mode == 'sample':
+        # 抽樣驗證
+        to_validate = unvalidated[:sample_count]
+        to_auto_approve = unvalidated[sample_count:]
+
+        # 標記需要驗證的
+        for task in to_validate:
+            result['pending_validation'].append(task['id'])
+
+        # 自動通過其餘的
+        for task in to_auto_approve:
+            mark_validated(task['id'], 'approved', validator_task_id='system:sample_auto')
+            log_agent_action('system', task['id'], 'sample_auto',
+                            f'Auto-approved (sampled {sample_count} for manual review)')
+            result['approved'] += 1
+            result['validated'] += 1
+
+        result['message'] = f"Sampled {len(to_validate)} for review, auto-approved {len(to_auto_approve)}"
+
+    else:  # normal
+        # 標準模式：所有任務都需要 Critic
+        for task in unvalidated:
+            result['pending_validation'].append(task['id'])
+
+        result['message'] = f"{len(unvalidated)} tasks pending Critic review"
+
+    return result
+
+
+def manual_validate(task_id: str, status: str, reviewer: str) -> Dict:
+    """
+    人類手動驗證（繞過 Critic）
+
+    用於人類已經 review 過程式碼的情況。
+
+    Args:
+        task_id: 任務 ID
+        status: 'approved' | 'rejected' | 'skipped'
+        reviewer: 審核者名稱（記錄用）
+
+    Returns:
+        {
+            'status': str,
+            'phase': str,
+            'message': str
+        }
+    """
+    from servers.tasks import (
+        get_task, mark_validated, advance_task_phase, log_agent_action
+    )
+
+    task = get_task(task_id)
+    if not task:
+        return {
+            'status': 'error',
+            'phase': None,
+            'message': f"Task not found: {task_id}"
+        }
+
+    # 標記驗證結果
+    mark_validated(task_id, status, validator_task_id=f'human:{reviewer}')
+    log_agent_action(f'human:{reviewer}', task_id, f'manual_{status}', f'Manual review by {reviewer}')
+
+    # 推進 phase
+    if status == 'approved':
+        advance_task_phase(task_id, 'documentation')
+        phase = 'documentation'
+    elif status == 'rejected':
+        advance_task_phase(task_id, 'execution')
+        phase = 'execution'
+    else:  # skipped
+        advance_task_phase(task_id, 'documentation')
+        phase = 'documentation'
+
+    return {
+        'status': status,
+        'phase': phase,
+        'message': f"Task {task_id} manually {status} by {reviewer}"
+    }

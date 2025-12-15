@@ -13,6 +13,7 @@ import os
 import sqlite3
 import shutil
 import sys
+import json
 
 def check_dependencies():
     """檢查系統依賴"""
@@ -95,7 +96,11 @@ def install():
     else:
         init_database(db_path, schema_path)
 
-    # 4. 完成
+    # 4. 設定 Claude Code Hook ⭐
+    settings_path = os.path.expanduser('~/.claude/settings.json')
+    setup_hooks(settings_path, base_dir)
+
+    # 5. 完成
     print("\n" + "=" * 50)
     print("🎉 安裝完成！")
     print("\n可用 Agents:")
@@ -107,8 +112,65 @@ def install():
     print("\n使用方式:")
     print("  對 Claude Code 說：「使用 pfc agent 規劃 [任務描述]」")
 
-    # 5. 詢問是否加入專案 CLAUDE.md
+    # 6. 詢問是否加入專案 CLAUDE.md
     ask_add_to_claude_md(base_dir)
+
+def setup_hooks(settings_path, base_dir):
+    """設定 Claude Code PostToolUse Hook"""
+    hook_command = f"python3 {os.path.join(base_dir, 'hooks', 'post_task.py')}"
+
+    # 預期的 Hook 設定
+    hook_config = {
+        "matcher": "Task",
+        "hooks": [
+            {
+                "type": "command",
+                "command": hook_command,
+                "timeout": 30
+            }
+        ]
+    }
+
+    # 讀取現有設定（如果有）
+    settings = {}
+    if os.path.exists(settings_path):
+        try:
+            with open(settings_path, 'r') as f:
+                settings = json.load(f)
+            print(f"✅ 讀取現有 Claude 設定: {settings_path}")
+        except json.JSONDecodeError:
+            print(f"⚠️  設定檔格式錯誤，將重建: {settings_path}")
+            settings = {}
+
+    # 確保 hooks 結構存在
+    if 'hooks' not in settings:
+        settings['hooks'] = {}
+
+    if 'PostToolUse' not in settings['hooks']:
+        settings['hooks']['PostToolUse'] = []
+
+    # 檢查是否已有 Task matcher
+    existing_matchers = [h.get('matcher') for h in settings['hooks']['PostToolUse']]
+
+    if 'Task' in existing_matchers:
+        # 更新現有設定
+        for i, hook in enumerate(settings['hooks']['PostToolUse']):
+            if hook.get('matcher') == 'Task':
+                settings['hooks']['PostToolUse'][i] = hook_config
+                print(f"✅ 更新 Task Hook 設定")
+                break
+    else:
+        # 新增設定
+        settings['hooks']['PostToolUse'].append(hook_config)
+        print(f"✅ 新增 Task Hook 設定")
+
+    # 寫入設定
+    with open(settings_path, 'w') as f:
+        json.dump(settings, f, indent=2)
+
+    print(f"✅ Claude Code Hook 設定完成: {settings_path}")
+    print(f"   Hook: PostToolUse → Task → post_task.py")
+
 
 def ask_add_to_claude_md(base_dir):
     """詢問是否將 PFC 系統設定加入專案的 CLAUDE.md"""

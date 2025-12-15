@@ -189,9 +189,35 @@ subtask_4 = create_subtask(parent_id=task_id, description="子任務 4", depends
 ```
 
 ### 6. 派發任務
-建議使用 executor agent 執行：
-- 任務 ID: {subtask_id}
-- 描述: {description}
+
+輸出派發指令供主對話執行：
+
+```markdown
+## 派發 Executor
+
+### Executor Prompt 範本
+```python
+Task(
+    subagent_type='executor',
+    prompt=f'''
+TASK_ID = "{subtask_id}"
+
+任務描述：{description}
+
+## 執行步驟
+...
+
+## 預期產出
+...
+'''
+)
+```
+```
+
+> **⚠️ Hook 自動處理**：
+> - Executor 完成後，PostToolUse Hook 會自動呼叫 `finish_task()`
+> - Hook 會記錄 `executor_agent_id`（用於 resume）
+> - Executor 不需要手動呼叫 `finish_task()`
 
 ### 7. Micro-Nap 觸發
 當已處理 >5 個子任務或 context 變長時：
@@ -304,4 +330,94 @@ print(f"階段完成: {progress['progress']}")
 
 ### 待處理
 - ⏳ {subtask_4}
+```
+
+## 驗證循環（使用 run_validation_cycle）
+
+當 Executor 完成任務後，進入驗證階段。PFC 使用 `run_validation_cycle()` 統一處理。
+
+### 啟動驗證循環
+
+```python
+from servers.facade import run_validation_cycle
+
+# ⭐⭐⭐ 執行驗證循環
+# 這會自動找出需要驗證的任務，回傳要派發的 Critic 列表
+
+validation = run_validation_cycle(
+    parent_id=task_id,
+    mode='normal'  # 'normal' | 'batch_approve' | 'batch_skip' | 'sample'
+)
+
+print(f"""
+## 驗證循環
+
+**待驗證任務數**: {validation['total']}
+**模式**: {validation.get('mode', 'normal')}
+
+### 需要派發 Critic 的任務
+""")
+
+for task_to_validate in validation['pending_validation']:
+    print(f"- {task_to_validate}")
+```
+
+### 驗證模式說明
+
+| 模式 | 用途 | 行為 |
+|------|------|------|
+| `normal` | 標準流程（預設） | 每個任務派發一個 Critic |
+| `batch_approve` | 緊急 hotfix | 全部標記 approved，記錄原因 |
+| `batch_skip` | 實驗性任務 | 全部標記 skipped |
+| `sample` | 批量任務 | 只驗證前 N 個（sample_count），其餘 auto-approve |
+
+### 輸出派發指令
+
+對每個需要驗證的任務，輸出派發指令：
+
+```markdown
+## 派發 Critic
+
+| 原任務 ID | Agent | Prompt 摘要 |
+|-----------|-------|-------------|
+| {original_task_id} | critic | 驗證任務 {original_task_id}... |
+
+### Critic Prompt 範本
+```python
+Task(
+    subagent_type='critic',
+    prompt=f'''
+TASK_ID = "{critic_task_id}"
+ORIGINAL_TASK_ID = "{original_task_id}"
+
+驗證任務 {original_task_id}
+
+## 驗證標準
+...
+
+## 驗證對象
+...
+'''
+)
+```
+```
+
+> **⚠️ Hook 自動處理**：
+> - Critic 只需輸出 `## 驗證結果: APPROVED/CONDITIONAL/REJECTED`
+> - PostToolUse Hook 會自動呼叫 `finish_validation()`
+> - PFC 規劃完成後即結束，Critic reject 後的 resume 由主對話處理
+
+### 人類手動驗證
+
+如果要繞過 Critic 進行人類驗證：
+
+```python
+from servers.facade import manual_validate
+
+# 人類審核後手動標記
+manual_validate(
+    task_id=original_task_id,
+    status='approved',  # 'approved' | 'rejected' | 'skipped'
+    reviewer='human:alice'
+)
 ```

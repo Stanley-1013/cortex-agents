@@ -1,0 +1,35 @@
+[2025-12-14T19:04:58.780888] [executor] task_id=test-123, agent_id=agent-abc-123
+[2025-12-14T19:04:58.794024] Recorded agentId agent-abc-123 for task test-123
+[2025-12-14T19:04:58.794539] finish_task result: {'status': 'error', 'phase': None, 'next_action': 'check_task_id', 'message': 'Task not found: test-123'}
+[2025-12-14T19:05:40.729490] [critic] task_id=critic-456, agent_id=None
+[2025-12-14T19:05:40.744106] Critic verdict: CONDITIONAL for task test-123
+[2025-12-14T19:05:40.751303] Saved critic_suggestions to working_memory
+[2025-12-14T19:05:40.751898] finish_validation result: {'status': 'error', 'next_action': 'check_task_id', 'message': 'Original task not found: test-123'}
+[2025-12-15T09:47:55.681958] [executor] task_id=e6b53019, agent_id=agent-executor-001
+[2025-12-15T09:47:55.706527] Recorded agentId agent-executor-001 for task e6b53019
+[2025-12-15T09:47:55.728522] finish_task result: {'status': 'done', 'phase': 'validation', 'next_action': 'await_validation', 'message': 'Task completed, awaiting validation'}
+[2025-12-15T09:48:13.979546] [critic] task_id=a1fa5f23, agent_id=None
+[2025-12-15T09:48:13.999232] Critic verdict: APPROVED for task e6b53019
+[2025-12-15T09:48:14.037268] finish_validation result: {'status': 'approved', 'original_task_phase': 'documentation', 'next_action': 'proceed', 'message': 'Task e6b53019 validation passed'}
+[2025-12-15T09:48:33.263584] [critic] task_id=2c74a694, agent_id=None
+[2025-12-15T09:48:33.276551] Critic verdict: REJECTED for task 0f8e75d6
+[2025-12-15T09:48:33.321701] finish_validation result: {'status': 'rejected', 'original_task_phase': 'execution', 'next_action': 'resume_executor', 'resume_agent_id': None, 'rejection_context': {'issues': [], 'suggestions': [], 'retry_count': 1}, 'message': 'Task 0f8e75d6 rejected (attempt 1/3)'}
+[2025-12-15T09:48:54.475439] [critic] task_id=6e067910, agent_id=None
+[2025-12-15T09:48:54.486853] Critic verdict: CONDITIONAL for task 44efbb91
+[2025-12-15T09:48:54.493145] Saved critic_suggestions to working_memory
+[2025-12-15T09:48:54.511324] finish_validation result: {'status': 'approved', 'original_task_phase': 'documentation', 'next_action': 'proceed', 'message': 'Task 44efbb91 validation passed'}
+[2025-12-15T09:57:44.516814] [executor] task_id=4e4e64e0, agent_id=test-agent-123
+[2025-12-15T09:57:44.534440] Recorded agentId test-agent-123 for task 4e4e64e0
+[2025-12-15T09:57:44.551385] finish_task result: {'status': 'done', 'phase': 'validation', 'next_action': 'await_validation', 'message': 'Task completed, awaiting validation'}
+[2025-12-15T10:26:56.199667] [executor] task_id=hook-test-001, agent_id=9f9fef7a
+[2025-12-15T10:26:56.220433] Recorded agentId 9f9fef7a for task hook-test-001
+[2025-12-15T10:26:56.220881] finish_task result: {'status': 'error', 'phase': None, 'next_action': 'check_task_id', 'message': 'Task not found: hook-test-001'}
+[2025-12-15T10:27:47.671978] [executor] task_id=43e38cc8, agent_id=2a8a3247
+[2025-12-15T10:27:47.698542] Recorded agentId 2a8a3247 for task 43e38cc8
+[2025-12-15T10:27:47.718593] finish_task result: {'status': 'done', 'phase': 'validation', 'next_action': 'await_validation', 'message': 'Task completed, awaiting validation'}
+[2025-12-15T10:28:52.905003] [critic] task_id=critic-43e38cc8, agent_id=8b3986ad
+[2025-12-15T10:28:52.925136] Critic verdict: REJECTED for task 43e38cc8
+[2025-12-15T10:28:52.973149] finish_validation result: {'status': 'rejected', 'original_task_phase': 'execution', 'next_action': 'resume_executor', 'resume_agent_id': '2a8a3247', 'rejection_context': {'issues': [], 'suggestions': [], 'retry_count': 1}, 'message': 'Task 43e38cc8 rejected (attempt 1/3)'}
+[2025-12-15T13:56:29.867590] [critic] task_id=critic-test-002, agent_id=fd28e6a3
+[2025-12-15T13:56:29.958772] Critic verdict: APPROVED for task 43e38cc8
+[2025-12-15T13:56:29.990366] finish_validation result: {'status': 'approved', 'original_task_phase': 'documentation', 'next_action': 'proceed', 'message': 'Task 43e38cc8 validation passed'}

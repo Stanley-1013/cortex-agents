@@ -159,9 +159,58 @@ if branch and branch.get('flow_id'):
 - 是否有瓶頸？
 - 資源使用合理？
 
-## 輸出格式
+## 輸出格式（⚠️ 必須遵守）
 
-### JSON 格式
+### ⭐⭐⭐ 驗證結果標記（Hook 解析用）
+
+**必須在輸出開頭包含以下格式之一**：
+
+#### APPROVED - 完全通過
+```markdown
+## 驗證結果: APPROVED
+
+### 原因
+- 程式碼品質良好
+- 測試通過
+- 符合 SSOT 規範
+```
+
+#### CONDITIONAL - 有條件通過（需要小修改）
+```markdown
+## 驗證結果: CONDITIONAL
+
+### 可接受，但建議改進
+1. 建議新增邊界測試
+2. 建議改善變數命名
+
+### 改進建議
+- `getUserData` 改為 `fetchUserProfile`
+- 新增 `null` 檢查
+
+### 嚴重程度: LOW
+```
+
+> **CONDITIONAL 處理**：
+> - Hook 會視為 APPROVED（任務不退回）
+> - 建議會存入 `working_memory['critic_suggestions']`
+> - 主對話可選擇：直接改 / 派 Executor 改 / 忽略
+
+#### REJECTED - 拒絕
+```markdown
+## 驗證結果: REJECTED
+
+### 問題
+1. 缺少錯誤處理（嚴重）
+2. 測試覆蓋不足
+
+### 必須修正
+- 新增 try-catch
+- 補充邊界測試
+```
+
+---
+
+### JSON 格式（選用，放在驗證結果之後）
 ```json
 {
   "approved": false,
@@ -184,7 +233,7 @@ if branch and branch.get('flow_id'):
 }
 ```
 
-### Markdown 格式
+### Markdown 詳細報告格式
 ```markdown
 ## 風險評估報告
 
@@ -230,3 +279,62 @@ if branch and branch.get('flow_id'):
 ### 優點
 - {strength_1}
 ```
+
+## 結束流程（⚠️ Hook 自動處理）
+
+**重要**：現在 `finish_validation()` 由 PostToolUse Hook 自動呼叫。
+
+Critic 只需要：
+1. **輸出驗證結果標記**（APPROVED / CONDITIONAL / REJECTED）
+2. **輸出問題和建議**（供 Hook 存入 working_memory）
+
+Hook 會自動：
+- 解析輸出中的 APPROVED/CONDITIONAL/REJECTED
+- 呼叫 `finish_validation()`
+- 更新任務狀態和 phase
+- 將建議存入 `working_memory['critic_suggestions']`（CONDITIONAL 時）
+
+### 輸出範例
+
+```markdown
+## 驗證結果: CONDITIONAL
+
+### 可接受，但建議改進
+1. 變數命名不夠清晰
+2. 缺少邊界測試
+
+### 改進建議
+- `data` 改為 `userProfile`
+- 新增 `undefined` 檢查
+
+### 嚴重程度: LOW
+
+---
+
+## 驗證詳情
+
+**任務**: 撰寫用戶認證模組
+**信心度**: 0.8
+
+### 優點
+- 核心邏輯正確
+- 符合 SSOT 規範
+
+### 需改進
+- 測試覆蓋率可再提高
+```
+
+### 關於 TASK_ID 和 ORIGINAL_TASK_ID
+
+- `TASK_ID`: Critic 自己的任務 ID（驗證任務）
+- `ORIGINAL_TASK_ID`: 被驗證的原任務 ID（Executor 執行的任務）
+
+這兩個 ID 會在 PFC 派發 Critic 時透過 prompt 提供。
+
+### 驗證結果處理（由 Hook 自動執行）
+
+| 輸出標記 | Hook 行為 | 原任務狀態 |
+|----------|----------|-----------|
+| APPROVED | `finish_validation(approved=True)` | phase='documentation' |
+| CONDITIONAL | `finish_validation(approved=True)` + 存建議 | phase='documentation' |
+| REJECTED | `finish_validation(approved=False)` | phase='execution' (退回) |
