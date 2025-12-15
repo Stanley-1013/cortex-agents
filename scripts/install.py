@@ -116,6 +116,12 @@ def install():
     # 6. 詢問是否加入專案 CLAUDE.md
     ask_add_to_claude_md(base_dir)
 
+    # 7. 詢問是否初始化專案級 SSOT
+    ask_init_project_ssot(base_dir)
+
+    # 8. 詢問是否同步 Code Graph
+    ask_sync_code_graph()
+
 def setup_hooks(settings_path, base_dir):
     """設定 Claude Code PostToolUse Hook"""
     hook_command = f"python3 {os.path.join(base_dir, 'hooks', 'post_task.py')}"
@@ -266,6 +272,143 @@ from servers.memory import search_memory, load_checkpoint
     except Exception as e:
         print(f"❌ 無法寫入 CLAUDE.md: {e}")
         print(f"   請手動加入，參考：{os.path.join(base_dir, 'README.md')}")
+
+def ask_init_project_ssot(base_dir):
+    """詢問是否為當前專案初始化 SSOT INDEX"""
+    print("\n" + "=" * 50)
+
+    cwd = os.getcwd()
+    pfc_dir = os.path.join(cwd, '.claude', 'pfc')
+    index_path = os.path.join(pfc_dir, 'INDEX.md')
+
+    # 如果已存在，跳過
+    if os.path.exists(index_path):
+        print(f"✅ 專案 SSOT 已存在: {index_path}")
+        return
+
+    response = input("是否要為當前專案初始化 SSOT INDEX？(y/n): ").strip().lower()
+
+    if response != 'y':
+        print("跳過。之後可執行 `python install.py --init-ssot` 初始化")
+        return
+
+    # 建立目錄
+    os.makedirs(pfc_dir, exist_ok=True)
+
+    # INDEX 模板
+    project_name = os.path.basename(cwd)
+    index_template = f'''# Project Index (L1) - {project_name}
+
+> **導航圖**：INDEX 是專案的導航地圖，使用 `ref` 指向現有文檔，不複製內容。
+>
+> - `ref` 使用相對路徑指向專案內的文檔或程式碼
+> - 系統會透過 `ref` 自動載入對應內容
+
+---
+
+## Flows
+
+> 業務流程定義
+
+```yaml
+flows:
+  # 範例：
+  # - id: flow.auth
+  #   name: Authentication
+  #   description: 使用者認證流程
+  #   ref: docs/flows/auth.md
+```
+
+---
+
+## Domains
+
+> 業務領域/模組
+
+```yaml
+domains:
+  # 範例：
+  # - id: domain.user
+  #   name: User
+  #   description: 使用者管理
+  #   ref: src/models/user.py
+```
+
+---
+
+## APIs
+
+> 主要 API 入口
+
+```yaml
+apis:
+  # 範例：
+  # - id: api.auth.login
+  #   name: POST /api/auth/login
+  #   description: 使用者登入
+  #   flow: flow.auth
+  #   ref: src/routes/auth.py
+```
+
+---
+
+## 維護說明
+
+### 添加新項目
+
+1. 使用 `[type].[name]` 格式作為 id
+2. 確保 id 全局唯一
+3. 用 `ref` 指向實際檔案（相對路徑）
+
+### Node ID 命名規則
+
+| 前綴 | 用途 | 範例 |
+|------|------|------|
+| `flow.xxx` | 業務流程 | `flow.auth` |
+| `domain.xxx` | 業務領域 | `domain.user` |
+| `api.xxx.yyy` | API 端點 | `api.auth.login` |
+| `doc.xxx` | 文檔 | `doc.prd` |
+'''
+
+    try:
+        with open(index_path, 'w', encoding='utf-8') as f:
+            f.write(index_template)
+        print(f"✅ 已建立專案 SSOT: {index_path}")
+        print("   請編輯此檔案，用 ref 指向專案內的文檔")
+    except Exception as e:
+        print(f"❌ 無法建立 INDEX.md: {e}")
+
+
+def ask_sync_code_graph():
+    """詢問是否同步當前專案的 Code Graph"""
+    print("\n" + "=" * 50)
+
+    cwd = os.getcwd()
+
+    response = input("是否要同步當前專案的 Code Graph？(y/n): ").strip().lower()
+
+    if response != 'y':
+        print("跳過。之後可執行 `neuromorphic sync` 同步")
+        return
+
+    print("📊 同步 Code Graph...")
+    try:
+        # 動態載入 facade 模組
+        base_dir = os.path.expanduser('~/.claude/neuromorphic')
+        sys.path.insert(0, base_dir)
+        from servers.facade import sync
+
+        result = sync(cwd)
+        if result.get('status') == 'success':
+            stats = result.get('stats', {})
+            print(f"✅ Code Graph 同步完成")
+            print(f"   節點: {stats.get('nodes', 0)}, 邊: {stats.get('edges', 0)}")
+        else:
+            print(f"⚠️  同步完成但有警告: {result.get('message', '')}")
+    except Exception as e:
+        print(f"❌ 同步失敗: {e}")
+        print("   請確認專案結構正確，之後可執行 `neuromorphic sync` 重試")
+
 
 def init_database(db_path, schema_path):
     """初始化 SQLite 資料庫"""

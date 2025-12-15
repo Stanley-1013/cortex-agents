@@ -89,9 +89,9 @@ def load_doctrine(project_dir: Optional[str] = None) -> str:
     Returns:
         Doctrine 文件內容，如果不存在返回空字符串
     """
-    # 優先嘗試專案特定的 doctrine
+    # 優先嘗試專案特定的 doctrine（.claude/pfc/DOCTRINE.md）
     if project_dir:
-        project_doctrine = os.path.join(project_dir, ".ssot", "DOCTRINE.md")
+        project_doctrine = os.path.join(project_dir, ".claude", "pfc", "DOCTRINE.md")
         if os.path.exists(project_doctrine):
             with open(project_doctrine, 'r', encoding='utf-8') as f:
                 return f.read()
@@ -119,9 +119,9 @@ def load_index(project_dir: Optional[str] = None) -> str:
     Returns:
         Index 文件內容
     """
-    # 優先嘗試專案特定的 index
+    # 優先嘗試專案特定的 index（.claude/pfc/INDEX.md）
     if project_dir:
-        project_index = os.path.join(project_dir, ".ssot", "INDEX.md")
+        project_index = os.path.join(project_dir, ".claude", "pfc", "INDEX.md")
         if os.path.exists(project_index):
             with open(project_index, 'r', encoding='utf-8') as f:
                 return f.read()
@@ -242,9 +242,9 @@ def load_flow_spec(flow_id: str, project_dir: Optional[str] = None) -> str:
     # flow.auth -> auth.md
     name = flow_id.replace('flow.', '')
 
-    # 優先嘗試專案特定的 spec
+    # 優先嘗試專案特定的 spec（.claude/pfc/flows/）
     if project_dir:
-        project_spec = os.path.join(project_dir, ".ssot", "flows", f"{name}.md")
+        project_spec = os.path.join(project_dir, ".claude", "pfc", "flows", f"{name}.md")
         if os.path.exists(project_spec):
             with open(project_spec, 'r', encoding='utf-8') as f:
                 return f.read()
@@ -272,9 +272,9 @@ def load_domain_spec(domain_id: str, project_dir: Optional[str] = None) -> str:
     # domain.user -> user.md
     name = domain_id.replace('domain.', '')
 
-    # 優先嘗試專案特定的 spec
+    # 優先嘗試專案特定的 spec（.claude/pfc/domains/）
     if project_dir:
-        project_spec = os.path.join(project_dir, ".ssot", "domains", f"{name}.md")
+        project_spec = os.path.join(project_dir, ".claude", "pfc", "domains", f"{name}.md")
         if os.path.exists(project_spec):
             with open(project_spec, 'r', encoding='utf-8') as f:
                 return f.read()
@@ -402,15 +402,15 @@ def list_available_specs(project_dir: Optional[str] = None) -> Dict[str, List[st
             if f.endswith('.md'):
                 result['domains'].append(f[:-3])
 
-    # 檢查專案特定目錄
+    # 檢查專案特定目錄（.claude/pfc/）
     if project_dir:
-        project_flows = os.path.join(project_dir, ".ssot", "flows")
+        project_flows = os.path.join(project_dir, ".claude", "pfc", "flows")
         if os.path.exists(project_flows):
             for f in os.listdir(project_flows):
                 if f.endswith('.md') and f[:-3] not in result['flows']:
                     result['flows'].append(f[:-3])
 
-        project_domains = os.path.join(project_dir, ".ssot", "domains")
+        project_domains = os.path.join(project_dir, ".claude", "pfc", "domains")
         if os.path.exists(project_domains):
             for f in os.listdir(project_domains):
                 if f.endswith('.md') and f[:-3] not in result['domains']:
