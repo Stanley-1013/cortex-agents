@@ -104,11 +104,12 @@ def install():
     print("\n" + "=" * 50)
     print("🎉 安裝完成！")
     print("\n可用 Agents:")
-    print("  pfc        - 任務規劃、分解子任務")
-    print("  executor   - 執行單一任務")
-    print("  critic     - 驗證結果品質")
-    print("  memory     - 記憶管理")
-    print("  researcher - 資訊收集")
+    print("  pfc            - 任務規劃、分解子任務")
+    print("  executor       - 執行單一任務")
+    print("  critic         - 驗證結果品質")
+    print("  memory         - 記憶管理")
+    print("  researcher     - 資訊收集")
+    print("  drift-detector - 檢測 SSOT 與 Code 偏差")
     print("\n使用方式:")
     print("  對 Claude Code 說：「使用 pfc agent 規劃 [任務描述]」")
 
@@ -226,6 +227,7 @@ def ask_add_to_claude_md(base_dir):
 | Critic | `critic` | 驗證結果 |
 | Memory | `memory` | 知識管理 |
 | Researcher | `researcher` | 資訊收集 |
+| Drift Detector | `drift-detector` | 檢測 SSOT 與 Code 偏差 |
 
 ### 系統入口（供 Agent 使用）
 
