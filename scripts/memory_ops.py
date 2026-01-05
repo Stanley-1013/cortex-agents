@@ -13,6 +13,10 @@ Cortex Memory Operations
 
 import sys
 import os
+
+# Windows console encoding fix
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 import argparse
 import json
 

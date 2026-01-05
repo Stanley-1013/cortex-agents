@@ -15,9 +15,13 @@ Story 2: Memory 查詢增強
     --dry-run   只顯示將執行的操作，不實際修改資料庫
 """
 
-import sqlite3
-import os
 import sys
+import os
+import sqlite3
+
+# Windows console encoding fix
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 from datetime import datetime
 
 # 資料庫路徑

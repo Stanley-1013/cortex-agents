@@ -142,7 +142,7 @@ def setup_hooks(settings_path, base_dir):
     settings = {}
     if os.path.exists(settings_path):
         try:
-            with open(settings_path, 'r') as f:
+            with open(settings_path, 'r', encoding='utf-8') as f:
                 settings = json.load(f)
             print(f"✅ 讀取現有 Claude 設定: {settings_path}")
         except json.JSONDecodeError:
@@ -172,7 +172,7 @@ def setup_hooks(settings_path, base_dir):
         print(f"✅ 新增 Task Hook 設定")
 
     # 寫入設定
-    with open(settings_path, 'w') as f:
+    with open(settings_path, 'w', encoding='utf-8') as f:
         json.dump(settings, f, indent=2)
 
     print(f"✅ Claude Code Hook 設定完成: {settings_path}")
@@ -424,7 +424,7 @@ def upgrade_database(db_path, schema_path):
     existing_tables = {row[0] for row in cursor.fetchall()}
 
     # 執行 schema（CREATE TABLE IF NOT EXISTS 不會重建現有 table）
-    with open(schema_path) as f:
+    with open(schema_path, encoding='utf-8') as f:
         try:
             cursor.executescript(f.read())
         except sqlite3.OperationalError as e:
@@ -456,7 +456,7 @@ def init_database(db_path, schema_path):
 
     # 執行 schema
     if os.path.exists(schema_path):
-        with open(schema_path) as f:
+        with open(schema_path, encoding='utf-8') as f:
             cursor.executescript(f.read())
         print("✅ Schema 已載入")
     else:

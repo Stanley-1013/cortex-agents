@@ -51,7 +51,7 @@ def init_project_skill(project_dir, project_name):
 
     skill_md = os.path.join(skill_dir, "SKILL.md")
     if not os.path.exists(skill_md):
-        with open(skill_md, 'w') as f:
+        with open(skill_md, 'w', encoding='utf-8') as f:
             f.write(SKILL_TEMPLATE.format(project_name=project_name))
         print(f"✅ 專案 Skill 已建立: {skill_md}")
     else:
@@ -62,7 +62,8 @@ def init_project_skill(project_dir, project_name):
 
 def init_project(project_name, project_dir=None):
     """初始化專案"""
-    base_dir = os.path.expanduser('~/.claude/skills/cortex-agents')
+    # 使用相對路徑，相容所有平台
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     db_path = os.path.join(base_dir, 'brain', 'brain.db')
 
     if project_dir is None:
@@ -119,7 +120,7 @@ SKILL_DIR = "{skill_dir}"
 '''
 
     config_path = os.path.join(config_dir, 'config.py')
-    with open(config_path, 'w') as f:
+    with open(config_path, 'w', encoding='utf-8') as f:
         f.write(config_content)
 
     # 5. 完成

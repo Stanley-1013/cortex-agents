@@ -23,7 +23,7 @@ LOG_PATH = os.path.expanduser("~/.claude/skills/cortex-agents/hooks/hook.log")
 def log(msg: str):
     """寫入 debug log"""
     try:
-        with open(LOG_PATH, "a") as f:
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
             f.write(f"[{datetime.now().isoformat()}] {msg}\n")
     except:
         pass  # 忽略 log 錯誤

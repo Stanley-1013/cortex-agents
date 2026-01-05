@@ -17,7 +17,7 @@ if input_data.get("tool_name") != "Task":
 
 # 寫入 debug log
 log_path = os.path.expanduser("~/.claude/skills/cortex-agents/hooks/task_debug.log")
-with open(log_path, "a") as f:
+with open(log_path, "a", encoding="utf-8") as f:
     f.write(f"\n{'='*60}\n")
     f.write(f"Timestamp: {datetime.now().isoformat()}\n")
     f.write(f"{'='*60}\n")

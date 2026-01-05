@@ -195,7 +195,7 @@ def check_git_hooks() -> DiagnosticResult:
         )
 
     # 檢查 hook 內容是否包含 cortex
-    with open(post_merge, 'r') as f:
+    with open(post_merge, 'r', encoding='utf-8') as f:
         content = f.read()
 
     if 'cortex' not in content.lower():

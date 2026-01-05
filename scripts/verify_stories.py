@@ -8,6 +8,10 @@ Story 驗證腳本
 
 import sys
 import os
+
+# Windows console encoding fix
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 import sqlite3
 import traceback
 import json
@@ -91,7 +95,7 @@ def verify_story_1_2(v: StoryVerifier):
         schema_path = os.path.expanduser('~/.claude/skills/cortex-agents/brain/schema.sql')
         if not os.path.exists(schema_path):
             return False, "schema.sql not found"
-        with open(schema_path) as f:
+        with open(schema_path, encoding='utf-8') as f:
             content = f.read()
         required = ['project_nodes', 'project_edges', 'code_nodes', 'code_edges']
         found = [t for t in required if t in content]
@@ -253,7 +257,7 @@ def verify_story_10_12(v: StoryVerifier):
             path = os.path.expanduser(f'~/.claude/skills/cortex-agents/agents/{a}.md')
             if not os.path.exists(path):
                 return False, f"{a}.md not found"
-            with open(path) as f:
+            with open(path, encoding='utf-8') as f:
                 content = f.read()
             if len(content) < 100:
                 return False, "Content too short"
@@ -397,7 +401,7 @@ def verify_story_17(v: StoryVerifier):
         path = os.path.expanduser('~/.claude/skills/cortex-agents/agents/drift-detector.md')
         if not os.path.exists(path):
             return False, "drift-detector.md not found"
-        with open(path) as f:
+        with open(path, encoding='utf-8') as f:
             content = f.read()
         if 'SSOT' not in content and 'Code' not in content:
             return False, "Missing SSOT/Code concepts"
@@ -443,7 +447,7 @@ def verify_additional(v: StoryVerifier):
             path = os.path.expanduser(f'~/.claude/skills/cortex-agents/agents/{a}.md')
             if not os.path.exists(path):
                 return False, f"{a}.md not found"
-            with open(path) as f:
+            with open(path, encoding='utf-8') as f:
                 content = f.read()
             return True, f"{len(content)} chars"
 

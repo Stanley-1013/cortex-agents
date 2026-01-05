@@ -37,7 +37,7 @@ def test_db(tmp_path):
     # 讀取 schema 並初始化
     conn = sqlite3.connect(str(db_path))
 
-    with open(SCHEMA_PATH) as f:
+    with open(SCHEMA_PATH, encoding='utf-8') as f:
         conn.executescript(f.read())
 
     conn.commit()

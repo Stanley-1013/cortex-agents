@@ -419,7 +419,7 @@ def ensure_schema_exists():
 
     conn = get_db()
     try:
-        with open(schema_path, 'r') as f:
+        with open(schema_path, 'r', encoding='utf-8') as f:
             schema_sql = f.read()
         conn.executescript(schema_sql)
         conn.commit()
