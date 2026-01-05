@@ -8,22 +8,22 @@ Works with any AI coding agent that supports custom skills/tools, including Clau
 
 ### From GitHub
 
+**macOS/Linux:**
 ```bash
-# Clone to Claude Code skills directory
 git clone https://github.com/Stanley-1013/cortex-agents.git ~/.claude/skills/cortex-agents
-
-# Or for other AI agents, clone to your preferred location
-git clone https://github.com/Stanley-1013/cortex-agents.git /path/to/skills/cortex-agents
+python ~/.claude/skills/cortex-agents/scripts/doctor.py
 ```
 
-### Initialize Database
+**Windows (PowerShell):**
+```powershell
+git clone https://github.com/Stanley-1013/cortex-agents.git "$env:USERPROFILE\.claude\skills\cortex-agents"
+python "$env:USERPROFILE\.claude\skills\cortex-agents\scripts\doctor.py"
+```
 
-```bash
-# Run diagnostics and setup
-python ~/.claude/skills/cortex-agents/scripts/doctor.py
-
-# Or with custom path
-python /path/to/skills/cortex-agents/scripts/doctor.py
+**Windows (CMD):**
+```cmd
+git clone https://github.com/Stanley-1013/cortex-agents.git "%USERPROFILE%\.claude\skills\cortex-agents"
+python "%USERPROFILE%\.claude\skills\cortex-agents\scripts\doctor.py"
 ```
 
 ### Configure Your AI Agent

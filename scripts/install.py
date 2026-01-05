@@ -89,7 +89,8 @@ def install():
                 shutil.copy2(src, dst)
                 print(f"✅ 安裝 agent: {agent_file}")
 
-    # 3. 初始化或升級資料庫
+    # 3. 確保 brain 目錄存在並初始化或升級資料庫
+    os.makedirs(brain_dir, exist_ok=True)
     if os.path.exists(db_path):
         print(f"✅ 資料庫已存在: {db_path}")
         # 自動補齊缺失的 table（不影響現有資料）
