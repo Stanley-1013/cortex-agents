@@ -1,6 +1,4 @@
-# Neuromorphic Facade API Reference
-
-統一入口，使用者/Agent 只需要這些 API。
+# Neuromorphic API Reference
 
 ## Import
 
@@ -8,305 +6,180 @@
 import sys, os
 sys.path.insert(0, os.path.expanduser('~/.claude/skills/neuromorphic'))
 
+# Facade (recommended)
 from servers.facade import (
-    # Basic operations
-    init, sync, status,
+    init, sync, status, get_full_context, check_drift, sync_skill_graph,
+    finish_task, finish_validation, run_validation_cycle, validate_with_graph
+)
 
-    # Three-layer query
-    get_full_context, format_context_for_agent,
+# Tasks
+from servers.tasks import (
+    create_task, create_subtask, get_task, update_task, update_task_status,
+    get_next_task, get_task_progress, get_unvalidated_tasks, mark_validated,
+    advance_task_phase, get_task_branch, set_task_branch
+)
 
-    # Validation
-    validate_with_graph, format_validation_report,
-
-    # Task lifecycle
-    finish_task, finish_validation, run_validation_cycle, manual_validate,
-
-    # Drift detection
-    check_drift,
-
-    # SSOT sync
-    sync_ssot_graph
+# Memory
+from servers.memory import (
+    search_memory, search_memory_semantic, store_memory, store_memory_smart,
+    get_working_memory, set_working_memory, save_checkpoint, load_checkpoint,
+    get_project_context, add_episode, get_recent_episodes
 )
 ```
 
 ---
 
-## Basic Operations
+## Facade API
 
-### init(project_path, project_name=None) -> InitResult
+### init(project_path, project_name=None) -> Dict
+Initialize project (first-time use).
 
-初始化專案（首次使用時呼叫）
+### sync(project_path, project_name=None, incremental=True) -> Dict
+Sync Code Graph. Returns `{files_processed, nodes_added, edges_added, duration_ms}`.
 
+### status(project_path=None, project_name=None) -> Dict
+Get project status overview (includes Skill status).
+
+### get_full_context(branch, project_path=None, project_name=None) -> Dict
+Get three-layer context (Skill + Code + Memory + Drift).
 ```python
-result = init('/path/to/project', 'my-project')
-# {
-#   'project_name': 'my-project',
-#   'project_path': '/path/to/project',
-#   'schema_initialized': True,
-#   'types_initialized': (10, 8),
-#   'code_graph_synced': True,
-#   'sync_result': {...}
-# }
+ctx = get_full_context({'flow_id': 'flow.auth'}, '/path/to/project', 'my-project')
+# {skill: {...}, code: {...}, memory: [...], drift: {...}}
 ```
 
-### sync(project_path=None, project_name=None, incremental=True) -> SyncResult
-
-同步專案 Code Graph（主要 API）
-- 自動偵測變更檔案
-- 增量更新 Code Graph（或完整重建）
-
+### check_drift(project_path, project_name=None, flow_name=None) -> Dict
+Check Skill vs Code drift. Returns `{has_drift, drift_count, drifts: [{type, description, severity}]}`.
 ```python
-result = sync('/path/to/project', 'my-project')
-# {
-#   'files_processed': 10,
-#   'files_skipped': 5,
-#   'nodes_added': 50,
-#   'nodes_updated': 10,
-#   'edges_added': 80,
-#   'duration_ms': 1200,
-#   'errors': []
-# }
+report = check_drift('/path/to/project', 'my-project', 'auth')
 ```
 
-### status(project_name=None) -> StatusReport
+### sync_skill_graph(project_path=None, project_name=None) -> Dict
+Sync project SKILL.md to project_nodes/edges.
 
-取得專案狀態總覽
+### finish_task(task_id, success, result=None, error=None) -> Dict
+Executor must call when done. Returns `{status, phase, next_action}`.
 
-```python
-result = status('my-project')
-# {
-#   'project_name': 'my-project',
-#   'code_graph': {
-#     'node_count': 150,
-#     'edge_count': 300,
-#     'file_count': 25,
-#     'kinds': {'file': 25, 'function': 80, 'class': 20},
-#     'last_sync': '2025-01-05T10:30:00'
-#   },
-#   'ssot': {
-#     'has_doctrine': True,
-#     'has_index': True,
-#     'flow_count': 5,
-#     'domain_count': 3
-#   },
-#   'registry': {
-#     'node_kinds': 10,
-#     'edge_kinds': 8
-#   },
-#   'health': 'ok',
-#   'messages': []
-# }
-```
+### finish_validation(task_id, original_task_id, approved, issues=None) -> Dict
+Critic must call when done. Returns `{status, next_action, resume_agent_id}`.
+
+### validate_with_graph(modified_files, branch, project_path=None, project_name=None) -> Dict
+Graph-enhanced validation (impact analysis, Skill compliance, test coverage).
 
 ---
 
-## PFC Three-Layer Query
+## Tasks API
 
-### get_full_context(branch, project_name=None) -> Dict
-
-取得 Branch 完整三層 context（結構化版本）
-- L0: SSOT 層（意圖）- doctrine, flow_spec, related_nodes
-- L1: Code Graph 層（現實）- related_files, dependencies
-- L2: Memory 層（經驗）- 相關記憶
-- Drift: 偏差檢測
-
-**Args:**
+### create_task(project, description, priority=5, parent_id=None, branch=None) -> str
+Create task, returns task_id.
 - `branch`: `{'flow_id': 'flow.auth', 'domain_ids': ['domain.user']}`
 
-```python
-ctx = get_full_context({'flow_id': 'flow.auth'}, project_name='my-project')
-# {
-#   'branch': {'flow_id': 'flow.auth', 'domain_ids': ['domain.user']},
-#   'ssot': {
-#     'doctrine': {...},
-#     'flow_spec': {...},
-#     'related_nodes': [...]
-#   },
-#   'code': {
-#     'related_files': [...],
-#     'dependencies': [...]
-#   },
-#   'memory': [...],
-#   'drift': {'has_drift': False, 'drifts': []}
-# }
-```
+### create_subtask(parent_id, description, assigned_agent='executor', depends_on=None, requires_validation=True) -> str
+Create subtask with optional dependencies.
+- `assigned_agent`: 'executor', 'critic', 'memory', 'researcher'
+- `depends_on`: list of task_ids
 
-### format_context_for_agent(context) -> str
+### get_task(task_id) -> Dict
+Get task details (includes metadata, branch, executor_agent_id, rejection_count).
 
-將 get_full_context 結果格式化為 Agent 可讀的 Markdown
+### update_task(task_id, **kwargs) -> None
+Update task fields: executor_agent_id, rejection_count, status, phase, validation_status.
 
-```python
-formatted = format_context_for_agent(context)
-print(formatted)  # Markdown string
-```
+### update_task_status(task_id, status, result=None, error=None) -> None
+Update status: 'pending', 'running', 'done', 'failed', 'blocked'.
 
----
+### get_next_task(parent_id) -> Optional[Dict]
+Get next executable task (dependencies completed).
 
-## Critic Enhanced Validation
+### get_task_progress(parent_id) -> Dict
+Get progress stats: `{total, completed, pending, percentage}`.
 
-### validate_with_graph(modified_files, branch, project_name=None) -> Dict
+### get_unvalidated_tasks(parent_id) -> List[Dict]
+Get tasks pending validation.
 
-使用 Graph 做增強驗證
-- 修改影響分析
-- SSOT 符合性檢查
-- 測試覆蓋檢查
+### mark_validated(task_id, status, validator_task_id=None) -> None
+Mark validation: 'approved', 'rejected', 'skipped'.
 
-**Args:**
-- `modified_files`: `['src/api/auth.py', 'src/models/user.py']`
-- `branch`: `{'flow_id': 'flow.auth'}`
+### advance_task_phase(task_id, phase) -> None
+Advance phase: 'execution', 'validation', 'documentation', 'completed'.
 
-```python
-validation = validate_with_graph(
-    modified_files=['src/api/auth.py'],
-    branch={'flow_id': 'flow.auth'},
-    project_name='my-project'
-)
-# {
-#   'impact_analysis': {
-#     'direct_dependents': [...],
-#     'indirect_dependents': [...],
-#     'risk_level': 'medium'
-#   },
-#   'ssot_compliance': {
-#     'compliant': True,
-#     'violations': []
-#   },
-#   'test_coverage': {
-#     'covered': True,
-#     'missing_tests': []
-#   },
-#   'recommendations': ['Consider updating auth.md spec']
-# }
-```
+### get_task_branch(task_id) -> Optional[Dict]
+Get task's branch info.
 
-### format_validation_report(validation) -> str
-
-將 validate_with_graph 結果格式化為 Markdown 報告
+### set_task_branch(task_id, branch) -> None
+Set task's branch info.
 
 ---
 
-## Task Lifecycle Management
+## Memory API
 
-### finish_task(task_id, success, result=None, error=None, skip_validation=False) -> Dict
-
-Executor 結束任務時必須呼叫
-- 自動更新 status, phase
-- 回傳 next_action 建議
-
+### search_memory_semantic(query, project=None, limit=5, rerank_mode='claude', **kwargs) -> Dict
+Semantic search with reranking.
+- `rerank_mode`: 'claude' (recommended), 'embedding', 'none'
 ```python
-result = finish_task(task_id, success=True, result='完成')
-# {
-#   'status': 'done',
-#   'phase': 'validation',
-#   'next_action': 'await_validation'
-# }
+result = search_memory_semantic("auth pattern", rerank_mode='claude')
+if result['mode'] == 'claude_rerank':
+    print(result['rerank_prompt'])  # Agent selects best matches
 ```
 
-### finish_validation(task_id, original_task_id, approved, issues=None, suggestions=None) -> Dict
+### search_memory(query, project=None, category=None, limit=5, branch_flow=None) -> List[Dict]
+Full-text search.
+- `category`: 'sop', 'knowledge', 'error', 'preference', 'pattern', 'lesson'
 
-Critic 結束驗證時必須呼叫
-- 自動更新驗證狀態
-- rejected 時回傳 resume 指令
+### store_memory(category, content, title=None, project=None, importance=5, branch_flow=None) -> int
+Store to long-term memory. Returns memory_id.
+- `importance`: 1-10 (8-10 critical, 5-7 useful, 1-4 reference)
 
+### store_memory_smart(category, content, title=None, project=None, importance=5, auto_supersede=True) -> Dict
+Smart store: checks for similar memories first.
+Returns `{id, action: 'created'|'superseded', superseded_ids}`.
+
+### get_working_memory(task_id, key=None) -> Dict | Any
+Read working memory (session-scoped key-value).
+
+### set_working_memory(task_id, key, value, project=None) -> None
+Set working memory.
+
+### save_checkpoint(project, task_id, agent, state, summary) -> int
+Save Micro-Nap checkpoint.
 ```python
-result = finish_validation(
-    critic_id,
-    original_task_id,
-    approved=False,
-    issues=['覆蓋率不足']
-)
-# {
-#   'status': 'rejected',
-#   'next_action': 'resume_executor',
-#   'resume_agent_id': 'xxx'
-# }
+save_checkpoint('proj', task_id, 'pfc',
+    state={'completed': [...], 'pending': [...]},
+    summary='Phase 1 complete')
 ```
 
-### run_validation_cycle(parent_id, mode='normal', sample_count=3) -> Dict
+### load_checkpoint(task_id) -> Optional[Dict]
+Load latest checkpoint. Returns `{state, summary, created_at}`.
 
-PFC 執行驗證循環
-- mode: `'normal'` | `'batch_approve'` | `'batch_skip'` | `'sample'`
+### get_project_context(project) -> Dict
+Get project context for reconnection.
+Returns `{active_tasks, last_phase, recent_activity, suggestion}`.
 
-```python
-result = run_validation_cycle(
-    parent_id=task_id,
-    mode='sample',
-    sample_count=3
-)
-# {
-#   'total': 10,
-#   'pending_validation': ['task1', 'task2', 'task3'],
-#   'approved': 5,
-#   'message': 'Sampling 3 of 10 tasks'
-# }
-```
+### add_episode(project, event_type, summary, details=None, session_id=None) -> int
+Record event to episodic memory.
+- `event_type`: 'task_completed', 'error_encountered', 'phase_complete', etc.
 
-| Mode | Description |
-|------|-------------|
-| `normal` | 每個任務派發 Critic |
-| `batch_approve` | 全部標記 approved |
-| `batch_skip` | 全部標記 skipped |
-| `sample` | 只驗證前 N 個 |
-
-### manual_validate(task_id, status, reviewer) -> Dict
-
-人類手動驗證（繞過 Critic）
-
-```python
-manual_validate(
-    task_id=TASK_ID,
-    status='approved',  # 'approved' | 'rejected' | 'skipped'
-    reviewer='human:alice'
-)
-```
+### get_recent_episodes(project, limit=5) -> List[Dict]
+Get recent episodes.
 
 ---
 
-## Drift Detection
+## Memory Lifecycle
 
-### check_drift(project_name, flow_id=None) -> DriftReport
+### challenge_memory(memory_id, reason, challenger='system') -> Dict
+Mark memory as challenged. Returns `{success, memory_id, previous_status}`.
 
-檢查 SSOT vs Code 偏差
+### resolve_challenge(memory_id, resolution, new_content=None) -> Dict
+Resolve challenged memory.
+- `resolution`: 'keep', 'update', 'deprecate'
 
-```python
-report = check_drift('my-project', 'flow.auth')
-# {
-#   'has_drift': True,
-#   'drifts': [
-#     {
-#       'type': 'missing_implementation',
-#       'description': 'SSOT defines refreshToken but not found in code',
-#       'ssot_node': 'flow.auth.refreshToken',
-#       'severity': 'high'
-#     }
-#   ]
-# }
-```
+### deprecate_memory(memory_id, reason=None) -> Dict
+Deprecate memory directly.
 
-**Drift Types:**
-- `missing_implementation`: SSOT 有定義但程式碼沒實作
-- `missing_spec`: 程式碼有實作但 SSOT 沒記載
-- `mismatch`: 兩者定義不一致
+### validate_memory(memory_id) -> Dict
+Update last_validated timestamp.
 
----
-
-## SSOT Graph Sync
-
-### sync_ssot_graph(project_name=None) -> SyncResult
-
-同步 SSOT Index 到 project_nodes/project_edges
-- 從 PROJECT_INDEX.md 解析所有節點
-- 建立節點和關係到 Graph
-- 動態支援任何類型（不寫死）
-
-```python
-result = sync_ssot_graph('my-project')
-# {
-#   'nodes_added': 15,
-#   'edges_added': 20,
-#   'types_found': ['flows', 'domains', 'docs']
-# }
-```
+### find_similar_memories(content, category=None, threshold=0.7, limit=5) -> List[Dict]
+Find similar existing memories.
 
 ---
 
@@ -314,11 +187,7 @@ result = sync_ssot_graph('my-project')
 
 ```python
 from servers.facade import (
-    FacadeError,           # 基類
-    ProjectNotFoundError,  # 專案路徑不存在
-    NotInitializedError,   # 系統未初始化
-    CodeGraphEmptyError    # Code Graph 為空
+    FacadeError, ProjectNotFoundError, NotInitializedError, CodeGraphEmptyError
 )
 ```
-
-All errors include actionable messages telling users how to fix the issue.
+All errors include actionable fix messages.

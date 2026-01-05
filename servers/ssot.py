@@ -1,183 +1,523 @@
 """
-SSOT Server - Single Source of Truth 管理
-==========================================
+SSOT Server - 專案 Skill 管理
+==============================
 
-提供注意力樹（Attention Tree）的 L0/L1/L2 加載功能：
-- L0: Project Doctrine（核心目標與約束）
-- L1: Project Index（Flow/Domain/API/Page 目錄）
-- L2: 具體 Spec 文件（按需加載）
+讀取專案的 SKILL.md 和相關文檔。
+新架構：專案 Skill 位於 <project>/.claude/skills/<project-name>/
 
 使用方式：
-    from servers.ssot import load_doctrine, load_index, load_flow_spec, load_ssot_for_branch
+    from servers.ssot import load_skill, load_flow_spec, load_project_skill
 
-    # 加載核心約束
-    doctrine = load_doctrine()
-
-    # 加載目錄
-    index = load_index()
+    # 加載專案 SKILL.md
+    skill = load_skill('/path/to/project')
 
     # 加載特定 flow 的 spec
-    auth_spec = load_flow_spec('flow.auth')
+    auth_spec = load_flow_spec('auth', '/path/to/project')
 
-    # 根據 branch 加載完整 context
-    context = load_ssot_for_branch({
-        'flow_id': 'flow.auth',
-        'domain_ids': ['domain.user']
-    })
+    # 加載完整專案 context
+    context = load_project_skill('/path/to/project')
 """
 
 import os
 import re
-import yaml
+import glob
 from typing import Dict, List, Optional, Any
 from pathlib import Path
-
-# =============================================================================
-# 常量定義
-# =============================================================================
-
-SSOT_DIR = os.path.expanduser("~/.claude/skills/neuromorphic/brain/ssot")
 
 SCHEMA = """
 === SSOT Server API ===
 
-load_doctrine() -> str
-    加載 PROJECT_DOCTRINE.md (L0)
+load_skill(project_dir: str) -> str
+    加載專案 SKILL.md
 
-load_index() -> str
-    加載 PROJECT_INDEX.md (L1)
+load_flow_spec(flow_name: str, project_dir: str) -> str
+    加載特定 flow 的 spec 文件
+    例如: load_flow_spec('auth', '/path/to/project')
 
-load_flow_spec(flow_id: str) -> str
-    加載特定 flow 的 spec 文件 (L2)
-    例如: load_flow_spec('flow.auth') -> flows/auth.md
+load_domain_spec(domain_name: str, project_dir: str) -> str
+    加載特定 domain 的 spec 文件
 
-load_domain_spec(domain_id: str) -> str
-    加載特定 domain 的 spec 文件 (L2)
-    例如: load_domain_spec('domain.user') -> domains/user.md
+load_project_skill(project_dir: str) -> Dict
+    加載完整專案 Skill context
+    返回 {'skill': str, 'flows': [...], 'domains': [...], 'apis': [...]}
 
-load_ssot_for_branch(branch: Dict) -> str
-    根據 branch 加載完整 SSOT context
-    branch = {
-        'flow_id': 'flow.auth',
-        'domain_ids': ['domain.user']
-    }
+find_skill_dir(project_dir: str) -> Optional[str]
+    尋找專案的 Skill 目錄
 
-parse_index() -> Dict
-    解析 PROJECT_INDEX.md 為結構化數據
-    返回 {'flows': [...], 'domains': [...], 'apis': [...], ...}
+parse_skill_links(skill_content: str) -> Dict
+    從 SKILL.md 解析 Markdown 連結
+    返回 {'flows': [...], 'domains': [...], 'apis': [...]}
 
-get_node_by_id(node_id: str) -> Optional[Dict]
-    根據 node id 獲取節點信息
-    例如: get_node_by_id('flow.auth')
-
-validate_index_refs(project_dir: str = None) -> Dict
-    驗證 INDEX 中所有 ref 指向的檔案是否存在
-    返回 {'valid': bool, 'total': int, 'valid_refs': [...], 'missing_refs': [...]}
+validate_skill_refs(project_dir: str) -> Dict
+    驗證 SKILL.md 中所有連結是否有效
 """
 
 # =============================================================================
-# L0: Doctrine 加載
+# 向下相容：舊版 .claude/pfc/ 路徑
 # =============================================================================
 
-def load_doctrine(project_dir: Optional[str] = None) -> str:
+def _find_legacy_ssot(project_dir: str) -> Optional[str]:
+    """尋找舊版 SSOT 結構"""
+    legacy_path = os.path.join(project_dir, ".claude", "pfc", "INDEX.md")
+    if os.path.exists(legacy_path):
+        return legacy_path
+    return None
+
+
+def _load_legacy_index(project_dir: str) -> str:
+    """載入舊版 INDEX.md"""
+    legacy_path = _find_legacy_ssot(project_dir)
+    if legacy_path:
+        with open(legacy_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    return ""
+
+
+# =============================================================================
+# 專案 Skill 目錄尋找
+# =============================================================================
+
+def find_skill_dir(project_dir: str) -> Optional[str]:
     """
-    加載 Project Doctrine (L0)
+    尋找專案的 Skill 目錄
+
+    搜尋順序：
+    1. <project>/.claude/skills/<name>/SKILL.md（新格式）
+    2. <project>/.claude/pfc/INDEX.md（舊格式，向下相容）
 
     Args:
-        project_dir: 專案目錄（可選，用於專案特定的 doctrine）
+        project_dir: 專案目錄
 
     Returns:
-        Doctrine 文件內容，如果不存在返回空字符串
+        Skill 目錄路徑，如果不存在返回 None
     """
-    # 優先嘗試專案特定的 doctrine（.claude/pfc/DOCTRINE.md）
-    if project_dir:
-        project_doctrine = os.path.join(project_dir, ".claude", "pfc", "DOCTRINE.md")
-        if os.path.exists(project_doctrine):
-            with open(project_doctrine, 'r', encoding='utf-8') as f:
-                return f.read()
+    # 新格式：.claude/skills/<name>/
+    skills_base = os.path.join(project_dir, ".claude", "skills")
+    if os.path.exists(skills_base):
+        pattern = os.path.join(skills_base, "*", "SKILL.md")
+        matches = glob.glob(pattern)
+        if matches:
+            # 返回第一個找到的 Skill 目錄
+            return os.path.dirname(matches[0])
 
-    # 使用全局模板
-    global_path = os.path.join(SSOT_DIR, "PROJECT_DOCTRINE.md")
-    if os.path.exists(global_path):
-        with open(global_path, 'r', encoding='utf-8') as f:
+    # 舊格式：.claude/pfc/（向下相容）
+    legacy_path = os.path.join(project_dir, ".claude", "pfc")
+    if os.path.exists(os.path.join(legacy_path, "INDEX.md")):
+        return legacy_path
+
+    return None
+
+
+def get_skill_name(project_dir: str) -> Optional[str]:
+    """從 Skill 目錄路徑取得專案名稱"""
+    skill_dir = find_skill_dir(project_dir)
+    if skill_dir:
+        return os.path.basename(skill_dir)
+    return None
+
+
+# =============================================================================
+# Skill 加載
+# =============================================================================
+
+def load_skill(project_dir: str) -> str:
+    """
+    加載專案 SKILL.md
+
+    Args:
+        project_dir: 專案目錄
+
+    Returns:
+        SKILL.md 內容，如果不存在返回空字符串
+    """
+    skill_dir = find_skill_dir(project_dir)
+
+    if not skill_dir:
+        return ""
+
+    # 新格式：SKILL.md
+    skill_md = os.path.join(skill_dir, "SKILL.md")
+    if os.path.exists(skill_md):
+        with open(skill_md, 'r', encoding='utf-8') as f:
+            return f.read()
+
+    # 舊格式：INDEX.md（向下相容）
+    index_md = os.path.join(skill_dir, "INDEX.md")
+    if os.path.exists(index_md):
+        with open(index_md, 'r', encoding='utf-8') as f:
             return f.read()
 
     return ""
 
 
-# =============================================================================
-# L1: Index 加載與解析
-# =============================================================================
+# 向下相容別名
+def load_doctrine(project_dir: Optional[str] = None) -> str:
+    """向下相容：load_doctrine -> load_skill"""
+    if project_dir:
+        return load_skill(project_dir)
+    return ""
+
 
 def load_index(project_dir: Optional[str] = None) -> str:
+    """向下相容：load_index -> load_skill"""
+    if project_dir:
+        return load_skill(project_dir)
+    return ""
+
+
+# =============================================================================
+# Spec 文件加載
+# =============================================================================
+
+def load_flow_spec(flow_name: str, project_dir: str) -> str:
     """
-    加載 Project Index (L1)
+    加載特定 flow 的 spec 文件
 
     Args:
-        project_dir: 專案目錄（可選）
+        flow_name: Flow 名稱（不含 flow. 前綴），如 'auth'
+        project_dir: 專案目錄
 
     Returns:
-        Index 文件內容
+        Spec 文件內容
     """
-    # 優先嘗試專案特定的 index（.claude/pfc/INDEX.md）
-    if project_dir:
-        project_index = os.path.join(project_dir, ".claude", "pfc", "INDEX.md")
-        if os.path.exists(project_index):
-            with open(project_index, 'r', encoding='utf-8') as f:
-                return f.read()
+    skill_dir = find_skill_dir(project_dir)
+    if not skill_dir:
+        return ""
 
-    # 使用全局模板
-    global_path = os.path.join(SSOT_DIR, "PROJECT_INDEX.md")
-    if os.path.exists(global_path):
-        with open(global_path, 'r', encoding='utf-8') as f:
-            return f.read()
+    # 移除可能的 flow. 前綴
+    if flow_name.startswith('flow.'):
+        flow_name = flow_name[5:]
+
+    # 嘗試多種路徑
+    paths = [
+        os.path.join(skill_dir, "flows", f"{flow_name}.md"),
+        os.path.join(skill_dir, "flows", flow_name, "README.md"),
+    ]
+
+    for path in paths:
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8') as f:
+                return f.read()
 
     return ""
 
 
-def parse_index(project_dir: Optional[str] = None) -> Dict[str, List[Dict]]:
+def load_domain_spec(domain_name: str, project_dir: str) -> str:
     """
-    解析 PROJECT_INDEX.md 為結構化數據
+    加載特定 domain 的 spec 文件
 
-    **動態解析**：不限定固定類型，任何 YAML 區塊的 key 都會被收集。
-    這樣新增類型時只需要修改 INDEX.md，不用改程式碼。
+    Args:
+        domain_name: Domain 名稱（不含 domain. 前綴），如 'user'
+        project_dir: 專案目錄
+
+    Returns:
+        Spec 文件內容
+    """
+    skill_dir = find_skill_dir(project_dir)
+    if not skill_dir:
+        return ""
+
+    # 移除可能的 domain. 前綴
+    if domain_name.startswith('domain.'):
+        domain_name = domain_name[7:]
+
+    paths = [
+        os.path.join(skill_dir, "domains", f"{domain_name}.md"),
+        os.path.join(skill_dir, "domains", domain_name, "README.md"),
+    ]
+
+    for path in paths:
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8') as f:
+                return f.read()
+
+    return ""
+
+
+def load_api_spec(api_name: str, project_dir: str) -> str:
+    """
+    加載特定 API 的 spec 文件
+
+    Args:
+        api_name: API 名稱，如 'endpoints'
+        project_dir: 專案目錄
+
+    Returns:
+        Spec 文件內容
+    """
+    skill_dir = find_skill_dir(project_dir)
+    if not skill_dir:
+        return ""
+
+    paths = [
+        os.path.join(skill_dir, "apis", f"{api_name}.md"),
+        os.path.join(skill_dir, "apis", api_name, "README.md"),
+    ]
+
+    for path in paths:
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8') as f:
+                return f.read()
+
+    return ""
+
+
+# =============================================================================
+# Skill 解析
+# =============================================================================
+
+def parse_skill_links(skill_content: str) -> Dict[str, List[Dict]]:
+    """
+    從 SKILL.md 解析 Markdown 連結
+
+    提取格式：[name](path) - description
 
     Returns:
         {
-            'flows': [{'id': 'flow.auth', 'name': 'Authentication', ...}, ...],
+            'flows': [{'name': 'Auth Flow', 'path': 'flows/auth.md', 'description': '...'}, ...],
             'domains': [...],
-            'apis': [...],
-            ... (任何在 YAML 中定義的類型)
+            'apis': [...]
         }
     """
-    content = load_index(project_dir)
-    if not content:
-        return {}
+    result = {
+        'flows': [],
+        'domains': [],
+        'apis': [],
+        'other': []
+    }
 
-    result = {}  # 動態收集，不預設任何 key
+    # 匹配 Markdown 連結：[text](path) 或 [text](path) - description
+    link_pattern = r'\[([^\]]+)\]\(([^)]+)\)(?:\s*[-–—]\s*(.+))?'
 
-    # 使用正則提取 yaml 代碼塊
-    yaml_pattern = r'```yaml\s*\n([\s\S]*?)\n```'
-    matches = re.findall(yaml_pattern, content)
+    for match in re.finditer(link_pattern, skill_content):
+        name = match.group(1).strip()
+        path = match.group(2).strip()
+        description = match.group(3).strip() if match.group(3) else ""
 
-    for yaml_content in matches:
-        try:
-            data = yaml.safe_load(yaml_content)
-            if data and isinstance(data, dict):
-                for key, items in data.items():
-                    if isinstance(items, list):
-                        if key not in result:
-                            result[key] = []
-                        result[key].extend(items)
-        except yaml.YAMLError:
-            continue
+        link_info = {
+            'name': name,
+            'path': path,
+            'description': description
+        }
+
+        # 根據路徑分類
+        if path.startswith('flows/'):
+            result['flows'].append(link_info)
+        elif path.startswith('domains/'):
+            result['domains'].append(link_info)
+        elif path.startswith('apis/'):
+            result['apis'].append(link_info)
+        elif path.endswith('.md'):
+            result['other'].append(link_info)
 
     return result
 
 
+def parse_index(project_dir: Optional[str] = None) -> Dict[str, List[Dict]]:
+    """
+    向下相容：解析專案 Skill 為結構化數據
+
+    Returns:
+        {'flows': [...], 'domains': [...], 'apis': [...]}
+    """
+    if not project_dir:
+        return {}
+
+    skill_content = load_skill(project_dir)
+    if not skill_content:
+        return {}
+
+    return parse_skill_links(skill_content)
+
+
+# =============================================================================
+# 完整 Context 加載
+# =============================================================================
+
+def load_project_skill(
+    project_dir: str,
+    include_specs: bool = True,
+    max_spec_length: int = 2000
+) -> Dict[str, Any]:
+    """
+    加載完整專案 Skill context
+
+    Args:
+        project_dir: 專案目錄
+        include_specs: 是否包含 spec 文件內容
+        max_spec_length: 每個 spec 的最大長度
+
+    Returns:
+        {
+            'skill': str,           # SKILL.md 內容
+            'skill_dir': str,       # Skill 目錄路徑
+            'project_name': str,    # 專案名稱
+            'flows': [...],         # Flow specs
+            'domains': [...],       # Domain specs
+            'apis': [...]           # API specs
+        }
+    """
+    result = {
+        'skill': '',
+        'skill_dir': None,
+        'project_name': None,
+        'flows': [],
+        'domains': [],
+        'apis': []
+    }
+
+    skill_dir = find_skill_dir(project_dir)
+    if not skill_dir:
+        return result
+
+    result['skill_dir'] = skill_dir
+    result['project_name'] = os.path.basename(skill_dir)
+    result['skill'] = load_skill(project_dir)
+
+    if not include_specs:
+        return result
+
+    # 解析 SKILL.md 中的連結
+    links = parse_skill_links(result['skill'])
+
+    # 加載 flow specs
+    for flow in links.get('flows', []):
+        flow_name = os.path.basename(flow['path']).replace('.md', '')
+        content = load_flow_spec(flow_name, project_dir)
+        if content:
+            if len(content) > max_spec_length:
+                content = content[:max_spec_length] + f"\n\n... (截斷，完整內容請查看 {flow['path']})"
+            result['flows'].append({
+                'name': flow['name'],
+                'path': flow['path'],
+                'content': content
+            })
+
+    # 加載 domain specs
+    for domain in links.get('domains', []):
+        domain_name = os.path.basename(domain['path']).replace('.md', '')
+        content = load_domain_spec(domain_name, project_dir)
+        if content:
+            if len(content) > max_spec_length:
+                content = content[:max_spec_length] + f"\n\n... (截斷，完整內容請查看 {domain['path']})"
+            result['domains'].append({
+                'name': domain['name'],
+                'path': domain['path'],
+                'content': content
+            })
+
+    # 加載 API specs
+    for api in links.get('apis', []):
+        api_name = os.path.basename(api['path']).replace('.md', '')
+        content = load_api_spec(api_name, project_dir)
+        if content:
+            if len(content) > max_spec_length:
+                content = content[:max_spec_length] + f"\n\n... (截斷，完整內容請查看 {api['path']})"
+            result['apis'].append({
+                'name': api['name'],
+                'path': api['path'],
+                'content': content
+            })
+
+    return result
+
+
+# 向下相容別名
+def load_ssot_for_branch(
+    branch: Dict[str, Any],
+    project_dir: Optional[str] = None,
+    include_doctrine: bool = True,
+    max_spec_length: int = 2000
+) -> str:
+    """向下相容：轉換為 load_project_skill"""
+    if not project_dir:
+        return ""
+
+    context = load_project_skill(project_dir, max_spec_length=max_spec_length)
+
+    sections = []
+
+    if context['skill']:
+        sections.append(f"# Project Skill\n\n{context['skill'][:1500]}")
+
+    for flow in context['flows']:
+        sections.append(f"# Flow: {flow['name']}\n\n{flow['content']}")
+
+    for domain in context['domains']:
+        sections.append(f"# Domain: {domain['name']}\n\n{domain['content']}")
+
+    return "\n\n---\n\n".join(sections)
+
+
+# =============================================================================
+# 驗證
+# =============================================================================
+
+def validate_skill_refs(project_dir: str) -> Dict[str, Any]:
+    """
+    驗證 SKILL.md 中所有連結是否有效
+
+    Returns:
+        {
+            'valid': bool,
+            'total': int,
+            'valid_refs': [...],
+            'missing_refs': [...]
+        }
+    """
+    result = {
+        'valid': True,
+        'total': 0,
+        'valid_refs': [],
+        'missing_refs': []
+    }
+
+    skill_dir = find_skill_dir(project_dir)
+    if not skill_dir:
+        return result
+
+    skill_content = load_skill(project_dir)
+    links = parse_skill_links(skill_content)
+
+    # 檢查所有連結
+    all_links = links.get('flows', []) + links.get('domains', []) + links.get('apis', []) + links.get('other', [])
+
+    for link in all_links:
+        result['total'] += 1
+        ref_path = os.path.join(skill_dir, link['path'])
+
+        if os.path.exists(ref_path):
+            result['valid_refs'].append({
+                'name': link['name'],
+                'path': link['path'],
+                'full_path': ref_path
+            })
+        else:
+            result['missing_refs'].append({
+                'name': link['name'],
+                'path': link['path'],
+                'expected_path': ref_path
+            })
+            result['valid'] = False
+
+    return result
+
+
+# 向下相容別名
+def validate_index_refs(project_dir: Optional[str] = None) -> Dict[str, Any]:
+    """向下相容：validate_index_refs -> validate_skill_refs"""
+    if project_dir:
+        return validate_skill_refs(project_dir)
+    return {'valid': True, 'total': 0, 'valid_refs': [], 'missing_refs': []}
+
+
+# =============================================================================
+# 輔助函數
+# =============================================================================
+
 def get_node_by_id(node_id: str, project_dir: Optional[str] = None) -> Optional[Dict]:
     """
-    根據 node id 獲取節點信息
+    向下相容：根據 node id 獲取節點信息
 
     Args:
         node_id: 節點 ID，如 'flow.auth', 'domain.user'
@@ -185,335 +525,64 @@ def get_node_by_id(node_id: str, project_dir: Optional[str] = None) -> Optional[
     Returns:
         節點信息字典，如果不存在返回 None
     """
-    index_data = parse_index(project_dir)
-
-    # 根據 id 前綴確定類型
-    node_type = node_id.split('.')[0]
-    type_mapping = {
-        'flow': 'flows',
-        'domain': 'domains',
-        'api': 'apis',
-        'page': 'pages',
-        'test': 'tests'
-    }
-
-    collection_key = type_mapping.get(node_type)
-    if not collection_key:
+    if not project_dir:
         return None
 
-    for node in index_data.get(collection_key, []):
-        if node.get('id') == node_id:
-            return node
+    links = parse_index(project_dir)
+
+    # 根據 id 前綴確定類型
+    if node_id.startswith('flow.'):
+        name = node_id[5:]
+        for flow in links.get('flows', []):
+            if name in flow['path']:
+                return {'id': node_id, 'name': flow['name'], 'ref': flow['path']}
+    elif node_id.startswith('domain.'):
+        name = node_id[7:]
+        for domain in links.get('domains', []):
+            if name in domain['path']:
+                return {'id': node_id, 'name': domain['name'], 'ref': domain['path']}
+    elif node_id.startswith('api.'):
+        name = node_id[4:]
+        for api in links.get('apis', []):
+            if name in api['path']:
+                return {'id': node_id, 'name': api['name'], 'ref': api['path']}
 
     return None
 
 
-def get_all_nodes(project_dir: Optional[str] = None) -> List[Dict]:
+def list_available_specs(project_dir: str) -> Dict[str, List[str]]:
     """
-    獲取所有節點
+    列出專案中所有可用的 spec 文件
 
     Returns:
-        所有節點的列表
+        {'flows': ['auth', 'checkout'], 'domains': ['user', 'order'], 'apis': [...]}
     """
-    index_data = parse_index(project_dir)
-    all_nodes = []
+    result = {'flows': [], 'domains': [], 'apis': []}
 
-    for collection in index_data.values():
-        all_nodes.extend(collection)
+    skill_dir = find_skill_dir(project_dir)
+    if not skill_dir:
+        return result
 
-    return all_nodes
-
-
-# =============================================================================
-# L2: Spec 文件加載
-# =============================================================================
-
-def load_flow_spec(flow_id: str, project_dir: Optional[str] = None) -> str:
-    """
-    加載特定 flow 的 spec 文件 (L2)
-
-    Args:
-        flow_id: Flow ID，如 'flow.auth'
-
-    Returns:
-        Spec 文件內容
-    """
-    # 從 flow_id 提取文件名
-    # flow.auth -> auth.md
-    name = flow_id.replace('flow.', '')
-
-    # 優先嘗試專案特定的 spec（.claude/pfc/flows/）
-    if project_dir:
-        project_spec = os.path.join(project_dir, ".claude", "pfc", "flows", f"{name}.md")
-        if os.path.exists(project_spec):
-            with open(project_spec, 'r', encoding='utf-8') as f:
-                return f.read()
-
-    # 使用全局 spec
-    global_path = os.path.join(SSOT_DIR, "flows", f"{name}.md")
-    if os.path.exists(global_path):
-        with open(global_path, 'r', encoding='utf-8') as f:
-            return f.read()
-
-    return ""
-
-
-def load_domain_spec(domain_id: str, project_dir: Optional[str] = None) -> str:
-    """
-    加載特定 domain 的 spec 文件 (L2)
-
-    Args:
-        domain_id: Domain ID，如 'domain.user'
-
-    Returns:
-        Spec 文件內容
-    """
-    # 從 domain_id 提取文件名
-    # domain.user -> user.md
-    name = domain_id.replace('domain.', '')
-
-    # 優先嘗試專案特定的 spec（.claude/pfc/domains/）
-    if project_dir:
-        project_spec = os.path.join(project_dir, ".claude", "pfc", "domains", f"{name}.md")
-        if os.path.exists(project_spec):
-            with open(project_spec, 'r', encoding='utf-8') as f:
-                return f.read()
-
-    # 使用全局 spec
-    global_path = os.path.join(SSOT_DIR, "domains", f"{name}.md")
-    if os.path.exists(global_path):
-        with open(global_path, 'r', encoding='utf-8') as f:
-            return f.read()
-
-    return ""
-
-
-def load_spec_by_node_id(node_id: str, project_dir: Optional[str] = None) -> str:
-    """
-    根據 node id 加載對應的 spec 文件
-
-    Args:
-        node_id: 節點 ID
-
-    Returns:
-        Spec 文件內容
-    """
-    node = get_node_by_id(node_id, project_dir)
-    if not node:
-        return ""
-
-    # 如果節點有 spec 字段，直接使用
-    if 'spec' in node:
-        spec_path = os.path.join(SSOT_DIR, node['spec'])
-        if os.path.exists(spec_path):
-            with open(spec_path, 'r', encoding='utf-8') as f:
-                return f.read()
-
-    # 否則根據類型推斷
-    node_type = node_id.split('.')[0]
-    if node_type == 'flow':
-        return load_flow_spec(node_id, project_dir)
-    elif node_type == 'domain':
-        return load_domain_spec(node_id, project_dir)
-
-    return ""
-
-
-# =============================================================================
-# Branch Context 加載
-# =============================================================================
-
-def load_ssot_for_branch(
-    branch: Dict[str, Any],
-    project_dir: Optional[str] = None,
-    include_doctrine: bool = True,
-    max_spec_length: int = 2000
-) -> str:
-    """
-    根據 branch 加載完整 SSOT context
-
-    Args:
-        branch: Branch 信息，如 {'flow_id': 'flow.auth', 'domain_ids': ['domain.user']}
-        project_dir: 專案目錄
-        include_doctrine: 是否包含 Doctrine
-        max_spec_length: 每個 spec 的最大長度（避免 context 爆炸）
-
-    Returns:
-        組合的 SSOT context 字符串
-    """
-    sections = []
-
-    # L0: Doctrine（如果需要）
-    if include_doctrine:
-        doctrine = load_doctrine(project_dir)
-        if doctrine:
-            # 只取 Doctrine 的關鍵部分（前 1500 字符）
-            doctrine_preview = doctrine[:1500]
-            if len(doctrine) > 1500:
-                doctrine_preview += "\n\n... (Doctrine 已截斷，完整版請查看 PROJECT_DOCTRINE.md)"
-            sections.append(f"# Project Doctrine (L0)\n\n{doctrine_preview}")
-
-    # L2: Flow Spec
-    flow_id = branch.get('flow_id')
-    if flow_id:
-        flow_spec = load_flow_spec(flow_id, project_dir)
-        if flow_spec:
-            spec_preview = flow_spec[:max_spec_length]
-            if len(flow_spec) > max_spec_length:
-                spec_preview += f"\n\n... (完整 spec 請查看 flows/{flow_id.replace('flow.', '')}.md)"
-            sections.append(f"# Flow: {flow_id}\n\n{spec_preview}")
-
-    # L2: Domain Specs
-    domain_ids = branch.get('domain_ids', [])
-    for domain_id in domain_ids:
-        domain_spec = load_domain_spec(domain_id, project_dir)
-        if domain_spec:
-            spec_preview = domain_spec[:max_spec_length]
-            if len(domain_spec) > max_spec_length:
-                spec_preview += f"\n\n... (完整 spec 請查看 domains/{domain_id.replace('domain.', '')}.md)"
-            sections.append(f"# Domain: {domain_id}\n\n{spec_preview}")
-
-    return "\n\n---\n\n".join(sections)
-
-
-# =============================================================================
-# 輔助函數
-# =============================================================================
-
-def list_available_specs(project_dir: Optional[str] = None) -> Dict[str, List[str]]:
-    """
-    列出所有可用的 spec 文件
-
-    Returns:
-        {'flows': ['auth', 'checkout'], 'domains': ['user', 'order']}
-    """
-    result = {'flows': [], 'domains': []}
-
-    # 檢查全局目錄
-    flows_dir = os.path.join(SSOT_DIR, "flows")
+    # 掃描 flows 目錄
+    flows_dir = os.path.join(skill_dir, "flows")
     if os.path.exists(flows_dir):
         for f in os.listdir(flows_dir):
             if f.endswith('.md'):
-                result['flows'].append(f[:-3])  # 移除 .md
+                result['flows'].append(f[:-3])
 
-    domains_dir = os.path.join(SSOT_DIR, "domains")
+    # 掃描 domains 目錄
+    domains_dir = os.path.join(skill_dir, "domains")
     if os.path.exists(domains_dir):
         for f in os.listdir(domains_dir):
             if f.endswith('.md'):
                 result['domains'].append(f[:-3])
 
-    # 檢查專案特定目錄（.claude/pfc/）
-    if project_dir:
-        project_flows = os.path.join(project_dir, ".claude", "pfc", "flows")
-        if os.path.exists(project_flows):
-            for f in os.listdir(project_flows):
-                if f.endswith('.md') and f[:-3] not in result['flows']:
-                    result['flows'].append(f[:-3])
-
-        project_domains = os.path.join(project_dir, ".claude", "pfc", "domains")
-        if os.path.exists(project_domains):
-            for f in os.listdir(project_domains):
-                if f.endswith('.md') and f[:-3] not in result['domains']:
-                    result['domains'].append(f[:-3])
-
-    return result
-
-
-def validate_branch(branch: Dict[str, Any], project_dir: Optional[str] = None) -> Dict[str, Any]:
-    """
-    驗證 branch 信息是否有效
-
-    Args:
-        branch: Branch 信息
-
-    Returns:
-        {'valid': bool, 'errors': [...], 'warnings': [...]}
-    """
-    result = {'valid': True, 'errors': [], 'warnings': []}
-    index_data = parse_index(project_dir)
-
-    # 檢查 flow_id
-    flow_id = branch.get('flow_id')
-    if flow_id:
-        flow_ids = [f['id'] for f in index_data.get('flows', [])]
-        if flow_id not in flow_ids:
-            result['warnings'].append(f"flow_id '{flow_id}' 不在 INDEX 中")
-
-    # 檢查 domain_ids
-    domain_ids = branch.get('domain_ids', [])
-    known_domain_ids = [d['id'] for d in index_data.get('domains', [])]
-    for domain_id in domain_ids:
-        if domain_id not in known_domain_ids:
-            result['warnings'].append(f"domain_id '{domain_id}' 不在 INDEX 中")
-
-    return result
-
-
-def validate_index_refs(project_dir: Optional[str] = None) -> Dict[str, Any]:
-    """
-    驗證 INDEX 中所有 ref 指向的檔案是否存在
-
-    Args:
-        project_dir: 專案目錄（用於解析相對路徑）
-
-    Returns:
-        {
-            'valid': bool,
-            'total': int,
-            'valid_refs': [...],
-            'missing_refs': [...],
-            'errors': [...]
-        }
-    """
-    result = {
-        'valid': True,
-        'total': 0,
-        'valid_refs': [],
-        'missing_refs': [],
-        'errors': []
-    }
-
-    index_data = parse_index(project_dir)
-
-    # 決定基礎路徑
-    if project_dir:
-        base_path = Path(project_dir)
-    else:
-        base_path = Path(SSOT_DIR).parent.parent  # neuromorphic 根目錄
-
-    # 遍歷所有類型的節點
-    for node_type, nodes in index_data.items():
-        if not isinstance(nodes, list):
-            continue
-
-        for node in nodes:
-            if not isinstance(node, dict):
-                continue
-
-            # 支援多種 ref 字段名
-            ref = node.get('ref') or node.get('spec') or node.get('file') or node.get('path')
-            if not ref:
-                continue
-
-            result['total'] += 1
-            node_id = node.get('id', 'unknown')
-
-            # 解析路徑
-            ref_path = base_path / ref
-
-            if ref_path.exists():
-                result['valid_refs'].append({
-                    'node_id': node_id,
-                    'ref': ref,
-                    'path': str(ref_path)
-                })
-            else:
-                result['missing_refs'].append({
-                    'node_id': node_id,
-                    'ref': ref,
-                    'expected_path': str(ref_path)
-                })
-                result['valid'] = False
+    # 掃描 apis 目錄
+    apis_dir = os.path.join(skill_dir, "apis")
+    if os.path.exists(apis_dir):
+        for f in os.listdir(apis_dir):
+            if f.endswith('.md'):
+                result['apis'].append(f[:-3])
 
     return result
 
@@ -523,31 +592,42 @@ def validate_index_refs(project_dir: Optional[str] = None) -> Dict[str, Any]:
 # =============================================================================
 
 if __name__ == "__main__":
+    import sys
+
     print(SCHEMA)
     print("\n" + "=" * 50 + "\n")
 
-    # 測試 load_doctrine
-    print("=== Testing load_doctrine() ===")
-    doctrine = load_doctrine()
-    print(f"Doctrine length: {len(doctrine)} chars")
-    print(doctrine[:200] + "..." if len(doctrine) > 200 else doctrine)
+    # 使用當前目錄或命令列參數
+    test_dir = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
 
-    print("\n=== Testing load_index() ===")
-    index = load_index()
-    print(f"Index length: {len(index)} chars")
+    print(f"=== Testing with project_dir: {test_dir} ===\n")
 
-    print("\n=== Testing parse_index() ===")
-    parsed = parse_index()
-    for key, items in parsed.items():
-        print(f"{key}: {len(items)} items")
-        for item in items[:2]:
-            print(f"  - {item.get('id')}: {item.get('name')}")
+    # 測試 find_skill_dir
+    skill_dir = find_skill_dir(test_dir)
+    print(f"Skill directory: {skill_dir}")
 
-    print("\n=== Testing load_ssot_for_branch() ===")
-    branch = {
-        'flow_id': 'flow.auth',
-        'domain_ids': ['domain.user']
-    }
-    context = load_ssot_for_branch(branch)
-    print(f"Context length: {len(context)} chars")
-    print(context[:500] + "..." if len(context) > 500 else context)
+    # 測試 load_skill
+    skill = load_skill(test_dir)
+    print(f"\nSKILL.md length: {len(skill)} chars")
+    if skill:
+        print(skill[:300] + "..." if len(skill) > 300 else skill)
+
+    # 測試 parse_skill_links
+    if skill:
+        links = parse_skill_links(skill)
+        print(f"\n=== Parsed links ===")
+        for category, items in links.items():
+            if items:
+                print(f"{category}: {len(items)} items")
+                for item in items[:2]:
+                    print(f"  - {item['name']}: {item['path']}")
+
+    # 測試 validate_skill_refs
+    validation = validate_skill_refs(test_dir)
+    print(f"\n=== Validation ===")
+    print(f"Valid: {validation['valid']}")
+    print(f"Total refs: {validation['total']}")
+    print(f"Valid refs: {len(validation['valid_refs'])}")
+    print(f"Missing refs: {len(validation['missing_refs'])}")
+    for missing in validation['missing_refs']:
+        print(f"  ❌ {missing['name']}: {missing['path']}")

@@ -35,45 +35,47 @@ sync(project_path=None, project_name=None, incremental=True) -> SyncResult
         result = sync('/path/to/project', 'my-project')
         # {'files_processed': 10, 'nodes_added': 50, ...}
 
-status(project_name=None) -> StatusReport
+status(project_path=None, project_name=None) -> StatusReport
     取得專案狀態總覽
     - Code Graph 統計
-    - SSOT 狀態
+    - Skill 狀態（專案 SKILL.md）
     - 最後同步時間
 
 init(project_path, project_name=None) -> InitResult
     初始化專案（首次使用時呼叫）
 
-## PFC 三層查詢（Story 15）
+## PFC 三層查詢
 
-get_full_context(branch, project_name=None) -> Dict
+get_full_context(branch, project_path=None, project_name=None) -> Dict
     取得 Branch 完整三層 context（結構化版本）
-    - L0: SSOT 層（意圖）- doctrine, flow_spec, related_nodes
-    - L1: Code Graph 層（現實）- related_files, dependencies
-    - L2: Memory 層（經驗）- 相關記憶
+    - Skill 層（意圖）- SKILL.md, flow_spec, related_nodes
+    - Code Graph 層（現實）- related_files, dependencies
+    - Memory 層（經驗）- 相關記憶
     - Drift: 偏差檢測
 
     Args:
         branch: {'flow_id': 'flow.auth', 'domain_ids': ['domain.user']}
+        project_path: 專案目錄路徑（用於讀取專案 Skill）
 
     Example:
-        ctx = get_full_context({'flow_id': 'flow.auth'})
+        ctx = get_full_context({'flow_id': 'flow.auth'}, '/path/to/project')
         # {'branch': {...}, 'ssot': {...}, 'code': {...}, 'memory': [...], 'drift': {...}}
 
 format_context_for_agent(context) -> str
     將 get_full_context 結果格式化為 Agent 可讀的 Markdown
 
-## Critic 增強驗證（Story 16）
+## Critic 增強驗證
 
-validate_with_graph(modified_files, branch, project_name=None) -> Dict
+validate_with_graph(modified_files, branch, project_path=None, project_name=None) -> Dict
     使用 Graph 做增強驗證
     - 修改影響分析
-    - SSOT 符合性檢查
+    - Skill 符合性檢查
     - 測試覆蓋檢查
 
     Args:
         modified_files: ['src/api/auth.py', ...]
         branch: {'flow_id': 'flow.auth'}
+        project_path: 專案目錄路徑
 
     Returns: {
         'impact_analysis': {...},
@@ -120,23 +122,28 @@ manual_validate(task_id, status, reviewer) -> Dict
 
 ## Drift 偵測
 
-check_drift(project_name, flow_id=None) -> DriftReport
-    檢查 SSOT vs Code 偏差
+check_drift(project_path, project_name=None, flow_name=None) -> DriftReport
+    檢查 Skill vs Code 偏差
+
+    Args:
+        project_path: 專案目錄路徑（必要）
+        project_name: 專案名稱（預設使用目錄名）
+        flow_name: 特定 Flow 名稱（可選）
 
     Example:
-        report = check_drift('my-project', 'flow.auth')
+        report = check_drift('/path/to/project', 'my-project', 'auth')
         # {'has_drift': True, 'drifts': [...]}
 
-## SSOT Graph 同步
+## Skill Graph 同步
 
-sync_ssot_graph(project_name=None) -> SyncResult
-    同步 SSOT Index 到 project_nodes/project_edges
-    - 從 PROJECT_INDEX.md 解析所有節點
+sync_skill_graph(project_path=None, project_name=None) -> SyncResult
+    同步專案 SKILL.md 到 project_nodes/project_edges
+    - 從 SKILL.md 解析所有連結
     - 建立節點和關係到 Graph
-    - 動態支援任何類型（不寫死）
+    - 動態支援任何類型
 
     Example:
-        result = sync_ssot_graph('my-project')
+        result = sync_skill_graph('/path/to/project', 'my-project')
         # {'nodes_added': 15, 'edges_added': 20, 'types_found': ['flows', ...]}
 """
 
@@ -265,13 +272,18 @@ def sync(project_path: str = None, project_name: str = None, incremental: bool =
     return result
 
 
-def status(project_name: str = None) -> Dict:
+def status(project_path: str = None, project_name: str = None) -> Dict:
     """
     取得專案狀態總覽
+
+    Args:
+        project_path: 專案目錄路徑
+        project_name: 專案名稱（預設使用目錄名）
 
     Returns:
         {
             'project_name': str,
+            'project_path': str,
             'code_graph': {
                 'node_count': int,
                 'edge_count': int,
@@ -279,11 +291,12 @@ def status(project_name: str = None) -> Dict:
                 'kinds': {...},
                 'last_sync': datetime
             },
-            'ssot': {
-                'has_doctrine': bool,
-                'has_index': bool,
+            'skill': {
+                'has_skill': bool,
+                'skill_path': str,
                 'flow_count': int,
-                'domain_count': int
+                'domain_count': int,
+                'api_count': int
             },
             'registry': {
                 'node_kinds': int,
@@ -295,9 +308,10 @@ def status(project_name: str = None) -> Dict:
     """
     from servers.code_graph import get_code_graph_stats
     from servers.registry import diagnose as registry_diagnose
-    from servers.ssot import load_doctrine, parse_index
+    from servers.ssot import find_skill_dir, load_skill, parse_skill_links
 
-    project_name = project_name or os.path.basename(os.getcwd())
+    project_path = project_path or os.getcwd()
+    project_name = project_name or os.path.basename(os.path.abspath(project_path))
     messages = []
     health = 'ok'
 
@@ -305,7 +319,7 @@ def status(project_name: str = None) -> Dict:
     code_graph = get_code_graph_stats(project_name)
     if code_graph['node_count'] == 0:
         health = 'warning'
-        messages.append(f"Code Graph is empty. Run sync('{project_name}') to populate.")
+        messages.append(f"Code Graph is empty. Run sync('{project_path}', '{project_name}') to populate.")
 
     # Registry 狀態
     registry_status = registry_diagnose()
@@ -317,67 +331,70 @@ def status(project_name: str = None) -> Dict:
         health = 'warning' if health == 'ok' else health
         messages.extend(registry_status.get('messages', []))
 
-    # SSOT 狀態
-    ssot = {
-        'has_doctrine': False,
-        'has_index': False,
+    # Skill 狀態（專案層級）
+    skill = {
+        'has_skill': False,
+        'skill_path': None,
         'flow_count': 0,
-        'domain_count': 0
+        'domain_count': 0,
+        'api_count': 0
     }
-    try:
-        doctrine = load_doctrine()
-        ssot['has_doctrine'] = bool(doctrine)
-    except:
-        pass
 
-    try:
-        index = parse_index()
-        ssot['has_index'] = bool(index)
-        ssot['flow_count'] = len([n for n in index if n.get('kind') == 'flow'])
-        ssot['domain_count'] = len([n for n in index if n.get('kind') == 'domain'])
-    except:
-        pass
-
-    if not ssot['has_doctrine']:
-        messages.append("SSOT Doctrine not found. Create brain/ssot/PROJECT_DOCTRINE.md")
+    skill_dir = find_skill_dir(project_path)
+    if skill_dir:
+        skill['has_skill'] = True
+        skill['skill_path'] = skill_dir
+        try:
+            skill_content = load_skill(project_path)
+            links = parse_skill_links(skill_content)
+            skill['flow_count'] = len(links.get('flows', []))
+            skill['domain_count'] = len(links.get('domains', []))
+            skill['api_count'] = len(links.get('apis', []))
+        except:
+            pass
+    else:
+        messages.append(f"Project Skill not found. Run: python ~/.claude/skills/neuromorphic/scripts/init_project.py {project_name}")
 
     return {
         'project_name': project_name,
+        'project_path': project_path,
         'code_graph': code_graph,
-        'ssot': ssot,
+        'skill': skill,
         'registry': registry,
         'health': health,
         'messages': messages
     }
 
 
-def get_context(branch: Dict, project_name: str = None) -> str:
+def get_context(branch: Dict, project_path: str = None, project_name: str = None) -> str:
     """
     取得 Branch 完整 context
 
-    整合 SSOT + Memory + Graph 資訊，供 Agent 使用。
+    整合 Skill + Memory + Graph 資訊，供 Agent 使用。
 
     Args:
         branch: {'flow_id': 'flow.auth', 'domain_ids': ['domain.user']}
+        project_path: 專案目錄路徑
         project_name: 專案名稱
 
     Returns:
         格式化的 context 字串
     """
-    from servers.ssot import load_doctrine, load_flow_spec
+    from servers.ssot import load_skill, load_flow_spec
     from servers.memory import search_memory
     from servers.graph import get_neighbors
     from servers.code_graph import get_code_nodes
 
-    project_name = project_name or os.path.basename(os.getcwd())
+    project_path = project_path or os.getcwd()
+    project_name = project_name or os.path.basename(os.path.abspath(project_path))
     lines = []
 
-    # 1. Doctrine（核心原則）
+    # 1. Skill 內容（核心原則）
     try:
-        doctrine = load_doctrine()
-        if doctrine:
-            lines.append("## Doctrine (核心原則)")
-            lines.append(doctrine[:1000] + "..." if len(doctrine) > 1000 else doctrine)
+        skill_content = load_skill(project_path)
+        if skill_content:
+            lines.append("## Project Skill (核心原則)")
+            lines.append(skill_content[:1000] + "..." if len(skill_content) > 1000 else skill_content)
             lines.append("")
     except:
         pass
@@ -386,7 +403,7 @@ def get_context(branch: Dict, project_name: str = None) -> str:
     flow_id = branch.get('flow_id')
     if flow_id:
         try:
-            flow_spec = load_flow_spec(flow_id)
+            flow_spec = load_flow_spec(flow_id, project_path)
             if flow_spec:
                 lines.append(f"## Flow Spec: {flow_id}")
                 lines.append(flow_spec[:1500] + "..." if len(flow_spec) > 1500 else flow_spec)
@@ -437,112 +454,62 @@ def get_context(branch: Dict, project_name: str = None) -> str:
     return "\n".join(lines) if lines else f"No context available for branch: {branch}"
 
 
-def check_drift(project_name: str, flow_id: str = None) -> Dict:
+def check_drift(project_path: str, project_name: str = None, flow_name: str = None) -> Dict:
     """
-    檢查 SSOT vs Code 偏差
+    檢查 Skill vs Code 偏差
+
+    Args:
+        project_path: 專案目錄路徑（必要）
+        project_name: 專案名稱（預設使用目錄名）
+        flow_name: 特定 Flow 名稱（可選）
 
     Returns:
         {
             'has_drift': bool,
+            'drift_count': int,
             'drifts': [
                 {
                     'type': 'missing_implementation' | 'missing_spec' | 'mismatch',
                     'ssot_item': str,
                     'code_item': str,
-                    'description': str
+                    'description': str,
+                    'severity': str,
+                    'suggestion': str
                 }
             ],
             'summary': str
         }
     """
-    from servers.ssot import parse_index
-    from servers.graph import get_neighbors
-    from servers.code_graph import get_code_nodes
+    from servers.drift import detect_all_drifts, detect_flow_drift
 
-    drifts = []
+    project_name = project_name or os.path.basename(os.path.abspath(project_path))
 
-    # 1. 取得 SSOT 定義
-    try:
-        ssot_data = parse_index()
-        # parse_index 返回 {'flows': [...], 'domains': [...], ...}
-        # 展平為節點列表
-        ssot_nodes = []
-        for kind, nodes in ssot_data.items():
-            for node in nodes:
-                if isinstance(node, dict):
-                    node['kind'] = kind.rstrip('s')  # flows -> flow
-                    ssot_nodes.append(node)
-    except:
-        return {
-            'has_drift': False,
-            'drifts': [],
-            'summary': 'Cannot check drift: SSOT Index not found'
-        }
+    # 使用 drift.py 的完整偵測
+    if flow_name:
+        # 單一 Flow 偵測
+        report = detect_flow_drift(project_name, flow_name, project_path)
+    else:
+        # 全專案偵測
+        report = detect_all_drifts(project_name, project_path)
 
-    # 2. 取得 Code Graph
-    code_nodes = get_code_nodes(project_name, limit=1000)
-    code_files = set(n['file_path'] for n in code_nodes if n.get('file_path'))
-
-    # 3. 檢查 Flow → 應該有對應的 file
-    for ssot_node in ssot_nodes:
-        if ssot_node.get('kind') != 'flow':
-            continue
-
-        if flow_id and ssot_node.get('id') != flow_id:
-            continue
-
-        flow_name = ssot_node.get('id', '').replace('flow.', '')
-        ref = ssot_node.get('ref', '')
-
-        # 正規化名稱（處理 - 和 _ 的差異）
-        flow_name_normalized = flow_name.lower().replace('-', '_')
-
-        # 檢查是否有對應的實作檔案
-        has_impl = False
-
-        # 優先用 ref 匹配
-        if ref:
-            has_impl = any(ref in f or f.endswith(ref) for f in code_files)
-
-        # 用正規化名稱匹配
-        if not has_impl:
-            has_impl = any(flow_name_normalized in f.lower().replace('-', '_') for f in code_files)
-
-        if not has_impl:
-            drifts.append({
-                'type': 'missing_implementation',
-                'ssot_item': ssot_node.get('id'),
-                'code_item': None,
-                'description': f"Flow '{ssot_node.get('id')}' defined in SSOT but no matching code files found"
-            })
-
-    # 4. 檢查 Code → 應該有對應的 SSOT
-    ssot_ids = set(n.get('id', '') for n in ssot_nodes)
-    for code_node in code_nodes:
-        if code_node['kind'] != 'file':
-            continue
-
-        file_path = code_node.get('file_path', '')
-        # 簡化：檢查主要目錄下的檔案是否有對應的 Flow
-        if '/api/' in file_path or '/routes/' in file_path:
-            # 提取可能的 flow 名稱
-            name = os.path.splitext(os.path.basename(file_path))[0]
-            expected_flow = f"flow.{name}"
-
-            if expected_flow not in ssot_ids:
-                drifts.append({
-                    'type': 'missing_spec',
-                    'ssot_item': None,
-                    'code_item': file_path,
-                    'description': f"Code file '{file_path}' exists but no SSOT spec for '{expected_flow}'"
-                })
-
-    summary = f"Found {len(drifts)} drift(s)" if drifts else "No drift detected"
-
+    # 轉換為 Dict 格式
     return {
-        'has_drift': len(drifts) > 0,
-        'drifts': drifts,
-        'summary': summary
+        'has_drift': report.has_drift,
+        'drift_count': report.drift_count,
+        'drifts': [
+            {
+                'id': d.id,
+                'type': d.type,
+                'severity': d.severity,
+                'ssot_item': d.ssot_item,
+                'code_item': d.code_item,
+                'description': d.description,
+                'suggestion': d.suggestion
+            }
+            for d in report.drifts
+        ],
+        'summary': report.summary,
+        'checked_at': report.checked_at.isoformat() if report.checked_at else None
     }
 
 
@@ -550,25 +517,26 @@ def check_drift(project_name: str, flow_id: str = None) -> Dict:
 # Story 15: PFC Three-Layer Query
 # =============================================================================
 
-def get_full_context(branch: Dict, project_name: str = None) -> Dict:
+def get_full_context(branch: Dict, project_path: str = None, project_name: str = None) -> Dict:
     """
     取得 Branch 完整三層 context（結構化版本）
 
     供 PFC 規劃任務時使用，整合：
-    - L0: SSOT 層（意圖）
-    - L1: Code Graph 層（現實）
-    - L2: Memory 層（經驗）
+    - Skill 層（意圖）- SKILL.md, flow_spec
+    - Code Graph 層（現實）- related_files, dependencies
+    - Memory 層（經驗）- 相關記憶
     - Drift: 偏差檢測
 
     Args:
         branch: {'flow_id': 'flow.auth', 'domain_ids': ['domain.user']}
+        project_path: 專案目錄路徑
         project_name: 專案名稱
 
     Returns:
         {
             'branch': {...},
-            'ssot': {
-                'doctrine': str,
+            'skill': {
+                'content': str,
                 'flow_spec': str,
                 'related_nodes': [...]
             },
@@ -583,20 +551,22 @@ def get_full_context(branch: Dict, project_name: str = None) -> Dict:
             }
         }
     """
-    from servers.ssot import load_doctrine, load_flow_spec
+    from servers.ssot import load_skill, load_flow_spec
     from servers.memory import search_memory
     from servers.graph import get_neighbors, get_node
     from servers.code_graph import get_code_nodes, get_code_edges
 
-    project_name = project_name or os.path.basename(os.getcwd())
+    project_path = project_path or os.getcwd()
+    project_name = project_name or os.path.basename(os.path.abspath(project_path))
     flow_id = branch.get('flow_id')
     domain_ids = branch.get('domain_ids', [])
 
     result = {
         'branch': branch,
         'project_name': project_name,
-        'ssot': {
-            'doctrine': None,
+        'project_path': project_path,
+        'skill': {
+            'content': None,
             'flow_spec': None,
             'related_nodes': []
         },
@@ -611,21 +581,21 @@ def get_full_context(branch: Dict, project_name: str = None) -> Dict:
         }
     }
 
-    # 1. SSOT 層
+    # 1. Skill 層
     try:
-        result['ssot']['doctrine'] = load_doctrine()
+        result['skill']['content'] = load_skill(project_path)
     except:
         pass
 
     if flow_id:
         try:
-            result['ssot']['flow_spec'] = load_flow_spec(flow_id)
+            result['skill']['flow_spec'] = load_flow_spec(flow_id, project_path)
         except:
             pass
 
         try:
             neighbors = get_neighbors(flow_id, project_name, depth=2)
-            result['ssot']['related_nodes'] = neighbors
+            result['skill']['related_nodes'] = neighbors
         except:
             pass
 
@@ -660,7 +630,8 @@ def get_full_context(branch: Dict, project_name: str = None) -> Dict:
 
     # 4. Drift 檢測
     try:
-        drift_result = check_drift(project_name, flow_id)
+        flow_name = flow_id.replace('flow.', '') if flow_id else None
+        drift_result = check_drift(project_path, project_name, flow_name)
         result['drift'] = drift_result
     except:
         pass
@@ -684,23 +655,23 @@ def format_context_for_agent(context: Dict) -> str:
     lines.append(f"# Context for Branch: {branch.get('flow_id', 'general')}")
     lines.append("")
 
-    # SSOT 層
-    ssot = context.get('ssot', {})
-    if ssot.get('doctrine'):
-        lines.append("## 📜 Doctrine (核心原則)")
-        doctrine = ssot['doctrine']
-        lines.append(doctrine[:800] + "..." if len(doctrine) > 800 else doctrine)
+    # Skill 層
+    skill = context.get('skill', {})
+    if skill.get('content'):
+        lines.append("## 📜 Project Skill (核心原則)")
+        content = skill['content']
+        lines.append(content[:800] + "..." if len(content) > 800 else content)
         lines.append("")
 
-    if ssot.get('flow_spec'):
+    if skill.get('flow_spec'):
         lines.append(f"## 📋 Flow Spec: {branch.get('flow_id')}")
-        spec = ssot['flow_spec']
+        spec = skill['flow_spec']
         lines.append(spec[:1200] + "..." if len(spec) > 1200 else spec)
         lines.append("")
 
-    if ssot.get('related_nodes'):
-        lines.append("## 🔗 Related SSOT Nodes")
-        for n in ssot['related_nodes'][:10]:
+    if skill.get('related_nodes'):
+        lines.append("## 🔗 Related Skill Nodes")
+        for n in skill['related_nodes'][:10]:
             direction = "→" if n.get('direction') == 'outgoing' else "←"
             lines.append(f"- {direction} [{n.get('edge_kind', '?')}] {n['id']} ({n.get('kind', '?')})")
         lines.append("")
@@ -974,22 +945,24 @@ def format_validation_report(validation: Dict) -> str:
 
 
 # =============================================================================
-# SSOT Graph 同步
+# Skill Graph 同步
 # =============================================================================
 
-def sync_ssot_graph(project_name: str = None) -> Dict:
+def sync_skill_graph(project_path: str = None, project_name: str = None) -> Dict:
     """
-    同步 SSOT Index 到 project_nodes/project_edges
+    同步專案 SKILL.md 到 project_nodes/project_edges
 
-    從 PROJECT_INDEX.md 解析所有節點和關係，同步到 Graph。
+    從 SKILL.md 解析所有連結，同步到 Graph。
     動態支援任何類型（不寫死在程式碼中）。
 
     Args:
-        project_name: 專案名稱（預設使用當前目錄名）
+        project_path: 專案目錄路徑
+        project_name: 專案名稱（預設使用目錄名）
 
     Returns:
         {
             'project_name': str,
+            'project_path': str,
             'nodes_added': int,
             'edges_added': int,
             'types_found': List[str],
@@ -997,51 +970,74 @@ def sync_ssot_graph(project_name: str = None) -> Dict:
             'total_edges': int
         }
     """
-    from servers.ssot import parse_index
+    from servers.ssot import load_skill, parse_skill_links, find_skill_dir
     from servers.graph import sync_from_index, get_graph_stats
 
-    project_name = project_name or os.path.basename(os.getcwd())
+    project_path = project_path or os.getcwd()
+    project_name = project_name or os.path.basename(os.path.abspath(project_path))
 
-    # 解析 SSOT Index
-    index_data = parse_index()
-
-    if not index_data:
+    # 檢查專案 Skill 是否存在
+    skill_dir = find_skill_dir(project_path)
+    if not skill_dir:
         return {
             'project_name': project_name,
+            'project_path': project_path,
             'nodes_added': 0,
             'edges_added': 0,
             'types_found': [],
             'total_nodes': 0,
             'total_edges': 0,
-            'message': 'No SSOT Index found or empty'
+            'message': f'No Skill found. Run: python ~/.claude/skills/neuromorphic/scripts/init_project.py {project_name}'
+        }
+
+    # 解析 SKILL.md 連結
+    skill_content = load_skill(project_path)
+    skill_links = parse_skill_links(skill_content)
+
+    if not skill_links:
+        return {
+            'project_name': project_name,
+            'project_path': project_path,
+            'nodes_added': 0,
+            'edges_added': 0,
+            'types_found': [],
+            'total_nodes': 0,
+            'total_edges': 0,
+            'message': 'SKILL.md has no links defined'
         }
 
     # 同步到 Graph
-    result = sync_from_index(project_name, index_data)
+    result = sync_from_index(project_name, skill_links)
 
     # 取得最終統計
     stats = get_graph_stats(project_name)
 
     return {
         'project_name': project_name,
+        'project_path': project_path,
         'nodes_added': result['nodes_added'],
         'edges_added': result['edges_added'],
-        'types_found': list(index_data.keys()),
+        'types_found': list(skill_links.keys()),
         'total_nodes': stats['node_count'],
         'total_edges': stats['edge_count']
     }
+
+
+# 向下相容別名
+sync_ssot_graph = sync_skill_graph
 
 
 # =============================================================================
 # 便利函數
 # =============================================================================
 
-def quick_status() -> str:
+def quick_status(project_path: str = None) -> str:
     """快速狀態報告（供 CLI 使用）"""
     try:
-        s = status()
+        s = status(project_path)
         lines = [
             f"Project: {s['project_name']}",
+            f"Path: {s['project_path']}",
             f"Health: {s['health']}",
             f"",
             f"Code Graph:",
@@ -1049,11 +1045,12 @@ def quick_status() -> str:
             f"  Edges: {s['code_graph']['edge_count']}",
             f"  Files: {s['code_graph']['file_count']}",
             f"",
-            f"SSOT:",
-            f"  Doctrine: {'✅' if s['ssot']['has_doctrine'] else '❌'}",
-            f"  Index: {'✅' if s['ssot']['has_index'] else '❌'}",
-            f"  Flows: {s['ssot']['flow_count']}",
-            f"  Domains: {s['ssot']['domain_count']}",
+            f"Skill:",
+            f"  Has Skill: {'✅' if s['skill']['has_skill'] else '❌'}",
+            f"  Path: {s['skill']['skill_path'] or 'N/A'}",
+            f"  Flows: {s['skill']['flow_count']}",
+            f"  Domains: {s['skill']['domain_count']}",
+            f"  APIs: {s['skill']['api_count']}",
         ]
         if s['messages']:
             lines.append("")
