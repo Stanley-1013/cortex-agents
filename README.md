@@ -160,6 +160,17 @@ SQLite database at `~/.claude/skills/cortex-agents/brain/brain.db`
 
 Schema: [brain/schema.sql](brain/schema.sql)
 
+## Compatibility
+
+| Feature | Claude Code | Other AI Agents |
+|---------|-------------|-----------------|
+| Memory & Semantic Search | ✅ Full | ✅ Full |
+| Code Graph & Drift Detection | ✅ Full | ✅ Full |
+| Task Lifecycle Management | ✅ Full | ✅ Full |
+| Multi-Agent Coordination | ✅ Native (Task tool) | ⚠️ Simulated |
+
+> **Note**: Claude Code's Task tool enables true parallel agent execution with isolated contexts. Other AI tools can use all APIs but run agents sequentially in shared context.
+
 ## Requirements
 
 - Python 3.8+
