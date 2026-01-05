@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Neuromorphic System - 專案初始化腳本
+Cortex System - 專案初始化腳本
 建立專案 Skill 結構和資料庫記錄
 """
 
@@ -58,7 +58,7 @@ def init_project_skill(project_dir, project_name):
 
 def init_project(project_name, project_dir=None):
     """初始化專案"""
-    base_dir = os.path.expanduser('~/.claude/skills/neuromorphic')
+    base_dir = os.path.expanduser('~/.claude/skills/cortex-agents')
     db_path = os.path.join(base_dir, 'brain', 'brain.db')
 
     if project_dir is None:
@@ -99,7 +99,7 @@ def init_project(project_name, project_dir=None):
     config_dir = os.path.join(project_dir, '.claude')
     os.makedirs(config_dir, exist_ok=True)
 
-    config_content = f'''# Neuromorphic System Configuration
+    config_content = f'''# Cortex System Configuration
 # 專案: {project_name}
 
 PROJECT_NAME = "{project_name}"

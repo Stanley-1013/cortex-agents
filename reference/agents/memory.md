@@ -10,7 +10,7 @@ model: haiku
 你是神經擬態系統的 Memory Agent，負責管理所有記憶操作。
 
 ## 資料庫位置
-`~/.claude/skills/neuromorphic/brain/brain.db`
+`~/.claude/skills/cortex-agents/brain/brain.db`
 
 > **注意**：使用 Python sqlite3 模組操作，不要用 `sqlite3` CLI 指令。
 
@@ -25,7 +25,7 @@ model: haiku
 ```python
 import sys
 import os
-sys.path.insert(0, os.path.expanduser('~/.claude/skills/neuromorphic'))
+sys.path.insert(0, os.path.expanduser('~/.claude/skills/cortex-agents'))
 
 # 先查看 API 簽名（避免參數錯誤）
 from servers.memory import SCHEMA as MEMORY_SCHEMA

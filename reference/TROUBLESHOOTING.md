@@ -7,18 +7,18 @@
 Run the doctor script:
 
 ```bash
-python ~/.claude/skills/neuromorphic/scripts/doctor.py
+python ~/.claude/skills/cortex-agents/scripts/doctor.py
 ```
 
 ---
 
 ## Common Issues
 
-### 1. "Neuromorphic system not initialized"
+### 1. "Cortex system not initialized"
 
 **Symptom:**
 ```
-NotInitializedError: Neuromorphic system not initialized.
+NotInitializedError: Cortex system not initialized.
 ```
 
 **Solution:**
@@ -69,7 +69,7 @@ ModuleNotFoundError: No module named 'servers'
 Add path before import:
 ```python
 import sys, os
-sys.path.insert(0, os.path.expanduser('~/.claude/skills/neuromorphic'))
+sys.path.insert(0, os.path.expanduser('~/.claude/skills/cortex-agents'))
 from servers.facade import sync
 ```
 
@@ -141,7 +141,7 @@ SSOT files not found
 **Solution:**
 1. Check INDEX.md exists:
    ```bash
-   ls ~/.claude/skills/neuromorphic/brain/ssot/PROJECT_INDEX.md
+   ls ~/.claude/skills/cortex-agents/brain/ssot/PROJECT_INDEX.md
    # or for project-level
    ls .claude/pfc/INDEX.md
    ```
@@ -215,22 +215,22 @@ ORIGINAL_TASK_ID = "{original_task_id}"
 **Warning:** This deletes all data!
 
 ```bash
-rm ~/.claude/skills/neuromorphic/brain/brain.db
-python ~/.claude/skills/neuromorphic/scripts/install.py
+rm ~/.claude/skills/cortex-agents/brain/brain.db
+python ~/.claude/skills/cortex-agents/scripts/install.py
 ```
 
 ### Backup Database
 
 ```bash
-cp ~/.claude/skills/neuromorphic/brain/brain.db \
-   ~/.claude/skills/neuromorphic/brain/brain.db.backup.$(date +%Y%m%d)
+cp ~/.claude/skills/cortex-agents/brain/brain.db \
+   ~/.claude/skills/cortex-agents/brain/brain.db.backup.$(date +%Y%m%d)
 ```
 
 ### Restore Backup
 
 ```bash
-cp ~/.claude/skills/neuromorphic/brain/brain.db.backup.20250105 \
-   ~/.claude/skills/neuromorphic/brain/brain.db
+cp ~/.claude/skills/cortex-agents/brain/brain.db.backup.20250105 \
+   ~/.claude/skills/cortex-agents/brain/brain.db
 ```
 
 ---
@@ -270,15 +270,15 @@ cp ~/.claude/skills/neuromorphic/brain/brain.db.backup.20250105 \
 **Symptom:** PostToolUse hook not running
 
 **Check:**
-1. Hook file exists: `~/.claude/skills/neuromorphic/hooks/post_task.py`
+1. Hook file exists: `~/.claude/skills/cortex-agents/hooks/post_task.py`
 2. Hook registered in Claude Code settings
-3. Check hook logs: `~/.claude/skills/neuromorphic/hooks/hook.log`
+3. Check hook logs: `~/.claude/skills/cortex-agents/hooks/hook.log`
 
 ### Hook Errors
 
 **Check hook log:**
 ```bash
-tail -50 ~/.claude/skills/neuromorphic/hooks/hook.log
+tail -50 ~/.claude/skills/cortex-agents/hooks/hook.log
 ```
 
 ---
@@ -303,16 +303,16 @@ print(servers.__version__ if hasattr(servers, '__version__') else 'unknown')
 
 ```bash
 # Database
-ls -la ~/.claude/skills/neuromorphic/brain/brain.db
+ls -la ~/.claude/skills/cortex-agents/brain/brain.db
 
 # SSOT
-ls -la ~/.claude/skills/neuromorphic/brain/ssot/
+ls -la ~/.claude/skills/cortex-agents/brain/ssot/
 
 # Agents
 ls -la ~/.claude/agents/
 
 # Skills
-ls -la ~/.claude/skills/neuromorphic/
+ls -la ~/.claude/skills/cortex-agents/
 ```
 
 ### Report Issues

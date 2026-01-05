@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Neuromorphic Doctor (Simplified)
+Cortex Doctor (Simplified)
 
 診斷系統狀態，確保各組件正確運作。
 
@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 # 確保可以 import servers
-sys.path.insert(0, os.path.expanduser('~/.claude/skills/neuromorphic'))
+sys.path.insert(0, os.path.expanduser('~/.claude/skills/cortex-agents'))
 
 
 class Status(Enum):
@@ -34,14 +34,14 @@ class DiagnosticResult:
 
 def check_database() -> DiagnosticResult:
     """檢查資料庫"""
-    db_path = os.path.expanduser('~/.claude/skills/neuromorphic/brain/brain.db')
+    db_path = os.path.expanduser('~/.claude/skills/cortex-agents/brain/brain.db')
 
     if not os.path.exists(db_path):
         return DiagnosticResult(
             name="Database",
             status=Status.ERROR,
             message=f"Database not found: {db_path}",
-            fix_hint="Run: python ~/.claude/skills/neuromorphic/scripts/install.py"
+            fix_hint="Run: python ~/.claude/skills/cortex-agents/scripts/install.py"
         )
 
     try:
@@ -62,7 +62,7 @@ def check_database() -> DiagnosticResult:
                 name="Database",
                 status=Status.WARNING,
                 message=f"Missing tables: {', '.join(missing)}",
-                fix_hint="Run: python ~/.claude/skills/neuromorphic/scripts/install.py"
+                fix_hint="Run: python ~/.claude/skills/cortex-agents/scripts/install.py"
             )
 
         return DiagnosticResult(
@@ -144,7 +144,7 @@ def check_code_graph() -> DiagnosticResult:
                 name="Code Graph",
                 status=Status.WARNING,
                 message="Code Graph is empty",
-                fix_hint="Run: python ~/.claude/skills/neuromorphic/scripts/sync.py"
+                fix_hint="Run: python ~/.claude/skills/cortex-agents/scripts/sync.py"
             )
 
         return DiagnosticResult(
@@ -192,7 +192,7 @@ def print_results(results: List[DiagnosticResult]) -> int:
     }
 
     print("=" * 50)
-    print("🧠 Neuromorphic System Diagnostics")
+    print("🧠 Cortex System Diagnostics")
     print("=" * 50)
     print()
 

@@ -1,4 +1,4 @@
-# Neuromorphic Multi-Agent System
+# Cortex Multi-Agent System
 
 A multi-agent task system with three-layer architecture: **Skill** (intent) + **Code Graph** (reality) + **Memory** (experience).
 
@@ -10,20 +10,20 @@ Works with any AI coding agent that supports custom skills/tools, including Clau
 
 ```bash
 # Clone to Claude Code skills directory
-git clone https://github.com/anthropics/neuromorphic.git ~/.claude/skills/neuromorphic
+git clone https://github.com/anthropics/cortex-agents.git ~/.claude/skills/cortex-agents
 
 # Or for other AI agents, clone to your preferred location
-git clone https://github.com/anthropics/neuromorphic.git /path/to/skills/neuromorphic
+git clone https://github.com/anthropics/cortex-agents.git /path/to/skills/cortex-agents
 ```
 
 ### Initialize Database
 
 ```bash
 # Run diagnostics and setup
-python ~/.claude/skills/neuromorphic/scripts/doctor.py
+python ~/.claude/skills/cortex-agents/scripts/doctor.py
 
 # Or with custom path
-python /path/to/skills/neuromorphic/scripts/doctor.py
+python /path/to/skills/cortex-agents/scripts/doctor.py
 ```
 
 ### Configure Your AI Agent
@@ -32,7 +32,7 @@ python /path/to/skills/neuromorphic/scripts/doctor.py
 
 ```json
 {
-  "skills": ["~/.claude/skills/neuromorphic"]
+  "skills": ["~/.claude/skills/cortex-agents"]
 }
 ```
 
@@ -40,7 +40,7 @@ python /path/to/skills/neuromorphic/scripts/doctor.py
 
 ```python
 import sys, os
-sys.path.insert(0, '/path/to/skills/neuromorphic')
+sys.path.insert(0, '/path/to/skills/cortex-agents')
 ```
 
 ## Features
@@ -55,7 +55,7 @@ sys.path.insert(0, '/path/to/skills/neuromorphic')
 
 ```python
 import sys, os
-sys.path.insert(0, os.path.expanduser('~/.claude/skills/neuromorphic'))
+sys.path.insert(0, os.path.expanduser('~/.claude/skills/cortex-agents'))
 
 from servers.facade import sync, status, check_drift
 from servers.tasks import create_task, create_subtask
@@ -67,7 +67,7 @@ from servers.memory import search_memory_semantic, store_memory
 Initialize a project Skill:
 
 ```bash
-python ~/.claude/skills/neuromorphic/scripts/init_project.py /path/to/project [project-name]
+python ~/.claude/skills/cortex-agents/scripts/init_project.py /path/to/project [project-name]
 ```
 
 This creates `<project>/.claude/skills/<name>/SKILL.md` - a template for LLM to fill with project documentation.
@@ -76,7 +76,7 @@ This creates `<project>/.claude/skills/<name>/SKILL.md` - a template for LLM to 
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     Neuromorphic System                      │
+│                     Cortex System                      │
 ├──────────────┬──────────────┬──────────────┬────────────────┤
 │  Skill Layer │  Code Graph  │    Memory    │     Tasks      │
 │   (Intent)   │  (Reality)   │ (Experience) │  (Execution)   │
@@ -137,13 +137,13 @@ from servers.memory import (
 
 ```bash
 # Diagnostics
-python ~/.claude/skills/neuromorphic/scripts/doctor.py
+python ~/.claude/skills/cortex-agents/scripts/doctor.py
 
 # Sync Code Graph
-python ~/.claude/skills/neuromorphic/scripts/sync.py /path/to/project
+python ~/.claude/skills/cortex-agents/scripts/sync.py /path/to/project
 
 # Initialize project
-python ~/.claude/skills/neuromorphic/scripts/init_project.py /path/to/project
+python ~/.claude/skills/cortex-agents/scripts/init_project.py /path/to/project
 ```
 
 ## Documentation
@@ -156,7 +156,7 @@ python ~/.claude/skills/neuromorphic/scripts/init_project.py /path/to/project
 
 ## Database
 
-SQLite database at `~/.claude/skills/neuromorphic/brain/brain.db`
+SQLite database at `~/.claude/skills/cortex-agents/brain/brain.db`
 
 Schema: [brain/schema.sql](brain/schema.sql)
 

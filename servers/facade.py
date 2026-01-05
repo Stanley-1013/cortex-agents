@@ -1,5 +1,5 @@
 """
-Neuromorphic Facade
+Cortex Facade
 
 統一入口，黑箱化系統複雜度。
 使用者/Agent 只需要這個模組。
@@ -20,7 +20,7 @@ from datetime import datetime
 # =============================================================================
 
 SCHEMA = """
-=== Neuromorphic Facade ===
+=== Cortex Facade ===
 統一入口，使用者/Agent 只需要這些 API。
 
 ## 基本操作
@@ -170,7 +170,7 @@ class NotInitializedError(FacadeError):
     """系統未初始化"""
     def __init__(self):
         super().__init__(
-            f"Neuromorphic system not initialized.\n\n"
+            f"Cortex system not initialized.\n\n"
             f"Please run:\n"
             f"  from servers.facade import init\n"
             f"  init('/path/to/your/project', 'project-name')\n"
@@ -353,7 +353,7 @@ def status(project_path: str = None, project_name: str = None) -> Dict:
         except:
             pass
     else:
-        messages.append(f"Project Skill not found. Run: python ~/.claude/skills/neuromorphic/scripts/init_project.py {project_name}")
+        messages.append(f"Project Skill not found. Run: python ~/.claude/skills/cortex-agents/scripts/init_project.py {project_name}")
 
     return {
         'project_name': project_name,
@@ -987,7 +987,7 @@ def sync_skill_graph(project_path: str = None, project_name: str = None) -> Dict
             'types_found': [],
             'total_nodes': 0,
             'total_edges': 0,
-            'message': f'No Skill found. Run: python ~/.claude/skills/neuromorphic/scripts/init_project.py {project_name}'
+            'message': f'No Skill found. Run: python ~/.claude/skills/cortex-agents/scripts/init_project.py {project_name}'
         }
 
     # 解析 SKILL.md 連結

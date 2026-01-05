@@ -6,7 +6,7 @@
 
 ```python
 import sys, os
-sys.path.insert(0, os.path.expanduser('~/.claude/skills/neuromorphic'))
+sys.path.insert(0, os.path.expanduser('~/.claude/skills/cortex-agents'))
 from servers.memory import get_project_context, load_checkpoint
 
 project = os.path.basename(os.getcwd())
@@ -30,7 +30,7 @@ checkpoint = load_checkpoint('TASK_ID')
 初始化專案 Skill 目錄：
 
 ```bash
-python ~/.claude/skills/neuromorphic/scripts/init_project.py <project-path> [project-name]
+python ~/.claude/skills/cortex-agents/scripts/init_project.py <project-path> [project-name]
 ```
 
 建立 `<project>/.claude/skills/<project-name>/SKILL.md` 空白模板。

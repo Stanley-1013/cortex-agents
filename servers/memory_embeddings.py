@@ -13,7 +13,7 @@ from typing import List, Dict, Optional
 # 嵌入模型配置
 EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 EMBEDDING_DIM = 384
-CACHE_DIR = os.path.expanduser("~/.claude/skills/neuromorphic/cache/embeddings")
+CACHE_DIR = os.path.expanduser("~/.claude/skills/cortex-agents/cache/embeddings")
 
 _model = None  # 延遲載入
 

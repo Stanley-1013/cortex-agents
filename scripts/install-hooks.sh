@@ -1,11 +1,11 @@
 #!/bin/bash
-# Neuromorphic Git Hooks Installer
+# Cortex Git Hooks Installer
 #
 # 安裝 Git hooks 到當前 repo，自動同步 Code Graph。
 #
 # 使用方式：
 #   cd /path/to/your/project
-#   ~/.claude/skills/neuromorphic/scripts/install-hooks.sh
+#   ~/.claude/skills/cortex-agents/scripts/install-hooks.sh
 
 set -e
 
@@ -18,7 +18,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo "🧠 Neuromorphic Git Hooks Installer"
+echo "🧠 Cortex Git Hooks Installer"
 echo "===================================="
 echo
 
@@ -55,7 +55,7 @@ fi
 if [ "$create_post_merge" = true ]; then
     cat > "$POST_MERGE" << 'EOF'
 #!/bin/bash
-# Neuromorphic post-merge hook
+# Cortex post-merge hook
 # Auto-sync Code Graph after git pull/merge
 
 echo "🔄 Syncing Code Graph..."
@@ -67,7 +67,7 @@ PROJECT_NAME="$(basename "$PROJECT_PATH")"
 # 執行同步
 python3 -c "
 import sys
-sys.path.insert(0, '$HOME/.claude/neuromorphic')
+sys.path.insert(0, '$HOME/.claude/cortex-agents')
 from servers.facade import sync
 result = sync('$PROJECT_PATH', '$PROJECT_NAME')
 print(f'  Files processed: {result[\"files_processed\"]}')
@@ -75,7 +75,7 @@ print(f'  Files skipped: {result[\"files_skipped\"]}')
 print(f'  Nodes added: {result[\"nodes_added\"]}')
 if result.get('errors'):
     print(f'  Errors: {result[\"errors\"]}')
-" 2>/dev/null || echo "  (Neuromorphic sync skipped - not configured)"
+" 2>/dev/null || echo "  (Cortex sync skipped - not configured)"
 
 echo "✅ Code Graph sync complete"
 EOF
@@ -102,7 +102,7 @@ fi
 if [ "$create_post_checkout" = true ]; then
     cat > "$POST_CHECKOUT" << 'EOF'
 #!/bin/bash
-# Neuromorphic post-checkout hook
+# Cortex post-checkout hook
 # Auto-sync Code Graph after git checkout
 
 # 只在切換分支時觸發（不是檔案 checkout）
@@ -115,7 +115,7 @@ if [ "$3" = "1" ]; then
 
     python3 -c "
 import sys
-sys.path.insert(0, '$HOME/.claude/neuromorphic')
+sys.path.insert(0, '$HOME/.claude/cortex-agents')
 from servers.facade import sync
 result = sync('$PROJECT_PATH', '$PROJECT_NAME')
 print(f'  Files processed: {result[\"files_processed\"]}')

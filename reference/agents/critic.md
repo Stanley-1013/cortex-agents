@@ -21,7 +21,7 @@ model: sonnet
 ```python
 import sys
 import os
-sys.path.insert(0, os.path.expanduser('~/.claude/skills/neuromorphic'))
+sys.path.insert(0, os.path.expanduser('~/.claude/skills/cortex-agents'))
 
 # 先查看 API 簽名（避免參數錯誤）
 from servers.tasks import SCHEMA as TASKS_SCHEMA

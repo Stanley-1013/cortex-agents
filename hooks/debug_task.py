@@ -16,7 +16,7 @@ if input_data.get("tool_name") != "Task":
     sys.exit(0)
 
 # 寫入 debug log
-log_path = os.path.expanduser("~/.claude/skills/neuromorphic/hooks/task_debug.log")
+log_path = os.path.expanduser("~/.claude/skills/cortex-agents/hooks/task_debug.log")
 with open(log_path, "a") as f:
     f.write(f"\n{'='*60}\n")
     f.write(f"Timestamp: {datetime.now().isoformat()}\n")

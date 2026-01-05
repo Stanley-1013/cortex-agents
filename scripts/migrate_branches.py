@@ -21,7 +21,7 @@ import sys
 from datetime import datetime
 
 # 資料庫路徑
-BRAIN_DB = os.path.expanduser("~/.claude/skills/neuromorphic/brain/brain.db")
+BRAIN_DB = os.path.expanduser("~/.claude/skills/cortex-agents/brain/brain.db")
 
 def check_column_exists(cursor, table: str, column: str) -> bool:
     """檢查欄位是否存在"""

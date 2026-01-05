@@ -1,33 +1,33 @@
 ---
-name: neuromorphic
+name: cortex-agents
 description: |
   Multi-agent task system for complex tasks. Three-layer architecture (Skill + Code Graph + Memory),
   task lifecycle with validation, semantic search, drift detection. Use when: user requests PFC agent,
-  complex multi-step tasks, multi-agent coordination, or mentions neuromorphic.
+  complex multi-step tasks, multi-agent coordination, or mentions cortex.
 allowed-tools: Read, Write, Bash, Glob, Grep, Task
 ---
 
-# Neuromorphic Multi-Agent System
+# Cortex Multi-Agent System
 
 ## Quick Start
 
 ```python
 import sys, os
-sys.path.insert(0, os.path.expanduser('~/.claude/skills/neuromorphic'))
+sys.path.insert(0, os.path.expanduser('~/.claude/skills/cortex-agents'))
 
 from servers.facade import get_full_context, check_drift, sync, finish_task
 from servers.tasks import create_task, create_subtask, get_task_progress
 from servers.memory import search_memory_semantic, store_memory, save_checkpoint, load_checkpoint
 ```
 
-**DB**: `~/.claude/skills/neuromorphic/brain/brain.db`
+**DB**: `~/.claude/skills/cortex-agents/brain/brain.db`
 
 ## Project Initialization
 
 初始化專案 Skill 目錄：
 
 ```bash
-python ~/.claude/skills/neuromorphic/scripts/init_project.py <project-path> [project-name]
+python ~/.claude/skills/cortex-agents/scripts/init_project.py <project-path> [project-name]
 ```
 
 建立 `<project>/.claude/skills/<project-name>/SKILL.md` 空白模板，由 LLM 填寫專案核心文檔。
@@ -101,9 +101,9 @@ Steps: 1. Read 2. Execute 3. Verify'''
 ## Scripts
 
 ```bash
-python ~/.claude/skills/neuromorphic/scripts/doctor.py         # Diagnostics
-python ~/.claude/skills/neuromorphic/scripts/sync.py PATH      # Graph sync
-python ~/.claude/skills/neuromorphic/scripts/init_project.py   # Init project
+python ~/.claude/skills/cortex-agents/scripts/doctor.py         # Diagnostics
+python ~/.claude/skills/cortex-agents/scripts/sync.py PATH      # Graph sync
+python ~/.claude/skills/cortex-agents/scripts/init_project.py   # Init project
 ```
 
 ## Reference

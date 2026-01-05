@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Neuromorphic CLI
+Cortex CLI
 
 主要命令列入口。
 
@@ -20,7 +20,7 @@ import os
 import argparse
 
 # 確保可以 import servers
-sys.path.insert(0, os.path.expanduser('~/.claude/skills/neuromorphic'))
+sys.path.insert(0, os.path.expanduser('~/.claude/skills/cortex-agents'))
 
 
 def cmd_doctor(args):
@@ -78,7 +78,7 @@ def cmd_init(args):
     project_path = args.path or os.getcwd()
     project_name = args.name or os.path.basename(os.path.abspath(project_path))
 
-    print(f"Initializing Neuromorphic for '{project_name}'...")
+    print(f"Initializing Cortex for '{project_name}'...")
     print(f"  Path: {project_path}")
     print()
 
@@ -96,8 +96,8 @@ def cmd_init(args):
     print("✅ Initialization complete!")
     print()
     print("Next steps:")
-    print("  1. Run 'neuromorphic doctor' to verify setup")
-    print("  2. Run 'neuromorphic install-hooks' to enable auto-sync")
+    print("  1. Run 'cortex doctor' to verify setup")
+    print("  2. Run 'cortex install-hooks' to enable auto-sync")
     return 0
 
 
@@ -137,7 +137,7 @@ def cmd_install_hooks(args):
     """安裝 Git hooks"""
     import subprocess
 
-    script_path = os.path.expanduser('~/.claude/skills/neuromorphic/scripts/install-hooks.sh')
+    script_path = os.path.expanduser('~/.claude/skills/cortex-agents/scripts/install-hooks.sh')
 
     if not os.path.exists(script_path):
         print(f"Error: Install script not found: {script_path}")
@@ -179,7 +179,7 @@ def cmd_graph(args):
         print()
         nodes = list_nodes(project_name, kind=args.kind)
         if not nodes:
-            print("No nodes found. Run 'neuromorphic ssot-sync' first.")
+            print("No nodes found. Run 'cortex ssot-sync' first.")
             return 1
 
         # 按 kind 分組
@@ -259,7 +259,7 @@ def cmd_dashboard(args):
     project_name = args.name or os.path.basename(os.getcwd())
 
     print("╔" + "═" * 60 + "╗")
-    print(f"║  🧠 Neuromorphic Dashboard - {project_name:<27} ║")
+    print(f"║  🧠 Cortex Dashboard - {project_name:<27} ║")
     print("╠" + "═" * 60 + "╣")
 
     # Code Graph 狀態
@@ -304,14 +304,14 @@ def cmd_dashboard(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Neuromorphic CLI - Multi-Agent Development System',
+        description='Cortex CLI - Multi-Agent Development System',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Commands:
   doctor         Diagnose system status
   sync           Sync Code Graph from source files
   status         Show project status overview
-  init           Initialize project for Neuromorphic
+  init           Initialize project for Cortex
   drift          Check SSOT vs Code drift
   install-hooks  Install Git hooks for auto-sync
   ssot-sync      Sync SSOT Index to Graph

@@ -1,7 +1,7 @@
 """
-Neuromorphic CLI
+Cortex CLI
 
-命令列工具，供使用者直接操作 Neuromorphic 系統。
+命令列工具，供使用者直接操作 Cortex 系統。
 
 使用方式：
     python -m cli.doctor     # 診斷系統狀態

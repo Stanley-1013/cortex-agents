@@ -33,7 +33,7 @@ from typing import Optional, List, Dict, Any
 from collections import deque
 
 # 資料庫路徑
-BRAIN_DB = os.path.expanduser("~/.claude/skills/neuromorphic/brain/brain.db")
+BRAIN_DB = os.path.expanduser("~/.claude/skills/cortex-agents/brain/brain.db")
 
 SCHEMA = """
 === Graph Server API ===

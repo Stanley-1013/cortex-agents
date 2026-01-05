@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Neuromorphic Doctor
+Cortex Doctor
 
 診斷系統所有銜接點，確保各組件正確整合。
 
@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 # 確保可以 import servers
-sys.path.insert(0, os.path.expanduser('~/.claude/skills/neuromorphic'))
+sys.path.insert(0, os.path.expanduser('~/.claude/skills/cortex-agents'))
 
 
 class Status(Enum):
@@ -35,7 +35,7 @@ class DiagnosticResult:
 
 def check_database() -> DiagnosticResult:
     """檢查資料庫是否存在且可連接"""
-    db_path = os.path.expanduser('~/.claude/skills/neuromorphic/brain/brain.db')
+    db_path = os.path.expanduser('~/.claude/skills/cortex-agents/brain/brain.db')
 
     if not os.path.exists(db_path):
         return DiagnosticResult(
@@ -116,7 +116,7 @@ def check_registry() -> DiagnosticResult:
 
 def check_ssot_files() -> DiagnosticResult:
     """檢查 SSOT 檔案"""
-    ssot_dir = os.path.expanduser('~/.claude/skills/neuromorphic/brain/ssot')
+    ssot_dir = os.path.expanduser('~/.claude/skills/cortex-agents/brain/ssot')
     doctrine_path = os.path.join(ssot_dir, 'PROJECT_DOCTRINE.md')
     index_path = os.path.join(ssot_dir, 'PROJECT_INDEX.md')
 
@@ -191,19 +191,19 @@ def check_git_hooks() -> DiagnosticResult:
             name="Git Hooks",
             status=Status.WARNING,
             message="post-merge hook not installed",
-            fix_hint="Run: neuromorphic install-hooks (or manually create .git/hooks/post-merge)"
+            fix_hint="Run: cortex install-hooks (or manually create .git/hooks/post-merge)"
         )
 
-    # 檢查 hook 內容是否包含 neuromorphic
+    # 檢查 hook 內容是否包含 cortex
     with open(post_merge, 'r') as f:
         content = f.read()
 
-    if 'neuromorphic' not in content.lower():
+    if 'cortex' not in content.lower():
         return DiagnosticResult(
             name="Git Hooks",
             status=Status.WARNING,
-            message="post-merge hook exists but doesn't call neuromorphic",
-            fix_hint="Add neuromorphic sync command to .git/hooks/post-merge"
+            message="post-merge hook exists but doesn't call cortex",
+            fix_hint="Add cortex sync command to .git/hooks/post-merge"
         )
 
     return DiagnosticResult(
@@ -300,7 +300,7 @@ def print_results(results: List[DiagnosticResult]):
     }
 
     print("=" * 60)
-    print("🧠 Neuromorphic System Diagnostics")
+    print("🧠 Cortex System Diagnostics")
     print("=" * 60)
     print()
 

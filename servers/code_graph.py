@@ -80,7 +80,7 @@ get_code_graph_stats(project) -> Dict
 # Database Connection
 # =============================================================================
 
-DB_PATH = os.path.expanduser('~/.claude/skills/neuromorphic/brain/brain.db')
+DB_PATH = os.path.expanduser('~/.claude/skills/cortex-agents/brain/brain.db')
 
 def get_db() -> sqlite3.Connection:
     """取得資料庫連線"""

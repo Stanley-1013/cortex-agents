@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Neuromorphic Sync Script
+Cortex Sync Script
 
 同步 Code Graph 和 SSOT Graph。
 
@@ -13,7 +13,7 @@ import os
 import argparse
 
 # 確保可以 import servers
-sys.path.insert(0, os.path.expanduser('~/.claude/skills/neuromorphic'))
+sys.path.insert(0, os.path.expanduser('~/.claude/skills/cortex-agents'))
 
 
 def sync_code_graph(project_path: str, project_name: str, incremental: bool = True):

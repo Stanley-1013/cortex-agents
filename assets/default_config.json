@@ -1,9 +1,9 @@
 {
   "database": {
-    "path": "~/.claude/skills/neuromorphic/brain/brain.db"
+    "path": "~/.claude/skills/cortex-agents/brain/brain.db"
   },
   "ssot": {
-    "path": "~/.claude/skills/neuromorphic/brain/ssot"
+    "path": "~/.claude/skills/cortex-agents/brain/ssot"
   },
   "code_graph": {
     "supported_extensions": [".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs"],

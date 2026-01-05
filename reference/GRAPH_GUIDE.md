@@ -11,7 +11,7 @@
 
 ```python
 import sys, os
-sys.path.insert(0, os.path.expanduser('~/.claude/skills/neuromorphic'))
+sys.path.insert(0, os.path.expanduser('~/.claude/skills/cortex-agents'))
 
 from servers.facade import sync, sync_skill_graph, check_drift
 from servers.graph import get_neighbors, get_impact, list_nodes

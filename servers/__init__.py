@@ -1,5 +1,5 @@
 """
-Neuromorphic System - Server Tools
+Cortex System - Server Tools
 提供給 Agent 使用的工具庫
 """
 

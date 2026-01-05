@@ -34,7 +34,7 @@ model: haiku
 ```python
 import sys
 import os
-sys.path.insert(0, os.path.expanduser('~/.claude/skills/neuromorphic'))
+sys.path.insert(0, os.path.expanduser('~/.claude/skills/cortex-agents'))
 
 # 先查看 API 簽名（避免參數錯誤）
 from servers.drift import SCHEMA as DRIFT_SCHEMA
@@ -62,7 +62,7 @@ print(f"SSOT Nodes: {stats['node_count']}")
 print(f"SSOT Edges: {stats['edge_count']}")
 
 if stats['node_count'] == 0:
-    print("\n⚠️ SSOT Graph 為空，請先執行 'neuromorphic ssot-sync'")
+    print("\n⚠️ SSOT Graph 為空，請先執行 'cortex ssot-sync'")
 ```
 
 ## 偵測流程
@@ -139,7 +139,7 @@ print(coverage_report)
 ```json
 {
   "has_drift": true,
-  "project": "neuromorphic",
+  "project": "cortex",
   "checked_at": "2025-01-XX",
   "summary": {
     "total_drifts": 5,
@@ -232,9 +232,9 @@ Critic 驗證後，檢查是否引入新偏差：
 
 ```bash
 # CLI 指令
-neuromorphic drift                  # 全面偏差檢查
-neuromorphic drift -f flow.auth     # 特定 Flow 檢查
-neuromorphic dashboard              # 儀表板（含偏差狀態）
+cortex drift                  # 全面偏差檢查
+cortex drift -f flow.auth     # 特定 Flow 檢查
+cortex dashboard              # 儀表板（含偏差狀態）
 ```
 
 ## 設計原則
