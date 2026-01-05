@@ -13,6 +13,8 @@ if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 # 專案 SKILL.md 模板
+# 路徑說明：SKILL.md 位於 <project>/.claude/skills/<name>/
+# 連結專案文檔時使用相對路徑，例如 ../../../docs/auth.md
 SKILL_TEMPLATE = '''---
 name: {project_name}
 description: |
@@ -33,14 +35,10 @@ description: |
 1. [不可違反的規則]
 2. ...
 
-## 業務流程
-<!-- 建立 flows/ 目錄後，在此列出連結 -->
-
-## 領域模型
-<!-- 建立 domains/ 目錄後，在此列出連結 -->
-
-## API 規格
-<!-- 建立 apis/ 目錄後，在此列出連結 -->
+## 參考文檔
+<!-- 連結專案內的文檔，使用相對路徑 (../../../ 回到專案根目錄) -->
+<!-- 例如: [API 文檔](../../../docs/api.md) -->
+<!-- 例如: [資料模型](../../../src/models/README.md) -->
 '''
 
 
