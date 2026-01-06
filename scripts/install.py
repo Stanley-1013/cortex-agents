@@ -84,14 +84,22 @@ def install():
     print(f"✅ 確認 agents 目錄: {agents_dir}")
 
     # 2. 複製 agent 定義到 ~/.claude/agents/
-    source_agents = os.path.join(base_dir, 'agents')
+    # 來源：reference/agents/（新位置）或 agents/（舊位置）
+    source_agents = os.path.join(base_dir, 'reference', 'agents')
+    if not os.path.exists(source_agents):
+        source_agents = os.path.join(base_dir, 'agents')  # fallback 舊位置
+
     if os.path.exists(source_agents):
+        installed_count = 0
         for agent_file in os.listdir(source_agents):
             if agent_file.endswith('.md'):
                 src = os.path.join(source_agents, agent_file)
                 dst = os.path.join(agents_dir, agent_file)
                 shutil.copy2(src, dst)
-                print(f"✅ 安裝 agent: {agent_file}")
+                installed_count += 1
+        print(f"✅ 安裝 {installed_count} 個 agent 定義到 {agents_dir}")
+    else:
+        print(f"⚠️  找不到 agent 定義目錄")
 
     # 3. 確保 brain 目錄存在並初始化或升級資料庫
     os.makedirs(brain_dir, exist_ok=True)

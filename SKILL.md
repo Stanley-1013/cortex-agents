@@ -9,6 +9,8 @@ allowed-tools: Read, Write, Bash, Glob, Grep, Task
 
 # Cortex Multi-Agent System
 
+> **Prerequisites**: Run `python ~/.claude/skills/cortex-agents/scripts/install.py` to install agents and hooks.
+
 ## Quick Start
 
 ```python
@@ -130,9 +132,10 @@ ORIGINAL_TASK_ID = "{original_task_id}"
 ## Scripts
 
 ```bash
+python ~/.claude/skills/cortex-agents/scripts/install.py        # Install/update agents & hooks
 python ~/.claude/skills/cortex-agents/scripts/doctor.py         # Diagnostics
 python ~/.claude/skills/cortex-agents/scripts/sync.py PATH      # Graph sync
-python ~/.claude/skills/cortex-agents/scripts/init_project.py   # Init project
+python ~/.claude/skills/cortex-agents/scripts/init_project.py   # Init project skill
 ```
 
 ## Reference

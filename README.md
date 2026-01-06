@@ -6,29 +6,50 @@ Works with any AI coding agent that supports custom skills/tools, including Clau
 
 ## Installation
 
-### From GitHub
+### Step 1: Clone Repository
 
 **macOS/Linux:**
 ```bash
 git clone https://github.com/Stanley-1013/cortex-agents.git ~/.claude/skills/cortex-agents
-python ~/.claude/skills/cortex-agents/scripts/doctor.py
 ```
 
 **Windows (PowerShell):**
 ```powershell
 git clone https://github.com/Stanley-1013/cortex-agents.git "$env:USERPROFILE\.claude\skills\cortex-agents"
-python "$env:USERPROFILE\.claude\skills\cortex-agents\scripts\doctor.py"
 ```
 
 **Windows (CMD):**
 ```cmd
 git clone https://github.com/Stanley-1013/cortex-agents.git "%USERPROFILE%\.claude\skills\cortex-agents"
-python "%USERPROFILE%\.claude\skills\cortex-agents\scripts\doctor.py"
 ```
 
-### Configure Your AI Agent
+### Step 2: Run Install Script
 
-**Claude Code**: Add to `~/.claude/settings.json`:
+The install script will:
+- Install agent definitions to `~/.claude/agents/`
+- Configure Claude Code hooks in `~/.claude/settings.json`
+- Initialize the database if needed
+
+**macOS/Linux:**
+```bash
+python ~/.claude/skills/cortex-agents/scripts/install.py --skip-prompts
+```
+
+**Windows:**
+```cmd
+python "%USERPROFILE%\.claude\skills\cortex-agents\scripts\install.py" --skip-prompts
+```
+
+Install options:
+- `--skip-prompts`: Non-interactive mode (recommended for scripts)
+- `--all`: Run all optional setup steps
+- `--add-claude-md`: Add config to project's CLAUDE.md
+- `--init-ssot`: Initialize project SSOT INDEX
+- `--sync-graph`: Sync Code Graph
+
+### Step 3: Add Skill to Claude Code
+
+Add to `~/.claude/settings.json`:
 
 ```json
 {
@@ -36,11 +57,21 @@ python "%USERPROFILE%\.claude\skills\cortex-agents\scripts\doctor.py"
 }
 ```
 
-**Cursor/Windsurf/Other**: Add the skill path to your agent's configuration, or include the import in your system prompt:
+> **Note**: The install script automatically configures hooks. You only need to add the skills entry.
+
+### For Other AI Agents (Cursor/Windsurf/etc.)
+
+Add the skill path to your agent's configuration, or include the import in your system prompt:
 
 ```python
 import sys, os
 sys.path.insert(0, '/path/to/skills/cortex-agents')
+```
+
+### Verify Installation
+
+```bash
+python ~/.claude/skills/cortex-agents/scripts/doctor.py
 ```
 
 ## Features
@@ -142,14 +173,17 @@ from servers.memory import (
 ## Scripts
 
 ```bash
-# Diagnostics
+# Install/update agents, hooks, and database
+python ~/.claude/skills/cortex-agents/scripts/install.py --skip-prompts
+
+# Diagnostics (verify installation)
 python ~/.claude/skills/cortex-agents/scripts/doctor.py
 
-# Sync Code Graph
+# Sync Code Graph for a project
 python ~/.claude/skills/cortex-agents/scripts/sync.py /path/to/project
 
-# Initialize project
-python ~/.claude/skills/cortex-agents/scripts/init_project.py /path/to/project
+# Initialize project Skill
+python ~/.claude/skills/cortex-agents/scripts/init_project.py my-project /path/to/project
 ```
 
 ## Documentation
