@@ -27,7 +27,11 @@ from servers.memory import search_memory_semantic, store_memory, save_checkpoint
 初始化專案 Skill 目錄：
 
 ```bash
-python ~/.claude/skills/cortex-agents/scripts/init_project.py <project-path> [project-name]
+# macOS/Linux
+python ~/.claude/skills/cortex-agents/scripts/init_project.py <project-name> <project-path>
+
+# Windows
+python "%USERPROFILE%\.claude\skills\cortex-agents\scripts\init_project.py" <project-name> <project-path>
 ```
 
 建立 `<project>/.claude/skills/<project-name>/SKILL.md` 空白模板，由 LLM 填寫專案核心文檔。

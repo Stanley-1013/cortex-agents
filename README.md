@@ -66,11 +66,17 @@ from servers.memory import search_memory_semantic, store_memory
 
 Initialize a project Skill:
 
+**macOS/Linux:**
 ```bash
-python ~/.claude/skills/cortex-agents/scripts/init_project.py /path/to/project [project-name]
+python ~/.claude/skills/cortex-agents/scripts/init_project.py my-project /path/to/project
 ```
 
-This creates `<project>/.claude/skills/<name>/SKILL.md` - a template for LLM to fill with project documentation.
+**Windows (CMD/PowerShell):**
+```cmd
+python "%USERPROFILE%\.claude\skills\cortex-agents\scripts\init_project.py" my-project C:\path\to\project
+```
+
+This creates `<project>/.claude/skills/<project-name>/SKILL.md` - a template for LLM to fill with project documentation.
 
 ## Architecture
 
