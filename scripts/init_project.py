@@ -127,7 +127,7 @@ SKILL_DIR = "{skill_dir}"
     print("\n" + "=" * 50)
     print("🎉 專案初始化完成！")
     print(f"\n專案: {project_name}")
-    print(f"Skill: {skill_dir}/SKILL.md")
+    print(f"Skill: {os.path.join(skill_dir, 'SKILL.md')}")
     print(f"資料庫: {db_path}")
     print("\n下一步:")
     print("  1. 編輯 SKILL.md 填寫專案資訊")
