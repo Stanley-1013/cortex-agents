@@ -121,9 +121,25 @@ SKILL_DIR = "{skill_dir}"
     with open(config_path, 'w', encoding='utf-8') as f:
         f.write(config_content)
 
-    # 5. 完成
+    # 5. 同步 Code Graph
     print(f"✅ 專案記錄已建立")
     print(f"✅ 本地設定: {config_path}")
+    print("\n📊 同步 Code Graph...")
+    try:
+        sys.path.insert(0, base_dir)
+        from servers.facade import sync
+        result = sync(project_dir, project_name)
+        if result.get('status') == 'success':
+            stats = result.get('stats', {})
+            print(f"✅ Code Graph 同步完成")
+            print(f"   節點: {stats.get('nodes', 0)}, 邊: {stats.get('edges', 0)}")
+        else:
+            print(f"⚠️  Code Graph 同步有警告: {result.get('message', '')}")
+    except Exception as e:
+        print(f"⚠️  Code Graph 同步失敗: {e}")
+        print("   可稍後執行 `python scripts/sync.py` 重試")
+
+    # 6. 完成
     print("\n" + "=" * 50)
     print("🎉 專案初始化完成！")
     print(f"\n專案: {project_name}")

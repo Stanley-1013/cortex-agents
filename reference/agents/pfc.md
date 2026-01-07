@@ -55,7 +55,7 @@ PFC 規劃任務 → 寫入 DB → 回報執行計畫
 
 ## 工作流程
 
-### 0. ⭐⭐⭐ Code Graph 查詢（必要第一步）
+### 0. ⭐⭐⭐ Code Graph 同步與查詢（必要第一步）
 
 > **重要**：無論人類是否指定範圍，PFC 都應該使用 Code Graph 確認完整範圍：
 > - 人類有指定範圍 → 以指定範圍為主，但用 Code Graph 檢查是否有**相關聯的檔案**需要一併處理
@@ -67,6 +67,17 @@ import os
 sys.path.insert(0, os.path.expanduser('~/.claude/skills/han-agents'))
 
 from servers.code_graph import get_code_nodes, get_code_dependencies
+from servers.facade import sync
+
+# ⭐ 第一步：先同步 Code Graph 確保資料最新
+project_name = "my-project"
+project_path = "/path/to/project"
+
+print("📊 同步 Code Graph...")
+sync_result = sync(project_path, project_name, incremental=True)
+print(f"✅ 同步完成: 節點 {sync_result.get('stats', {}).get('nodes', 0)}, 邊 {sync_result.get('stats', {}).get('edges', 0)}")
+
+# ⭐ 第二步：查詢檔案
 
 # ⭐ 根據任務類型查詢相關檔案
 # 範例：Unit Test 任務 - 找出所有待測檔案

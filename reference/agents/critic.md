@@ -16,7 +16,7 @@ model: sonnet
 3. **評估風險** - 分析潛在的失敗模式
 4. **提供建議** - 給出具體的改進方案
 
-## 啟動流程 - 查詢品質標準
+## 啟動流程 - 同步 Code Graph 並查詢品質標準
 
 ```python
 import sys
@@ -33,6 +33,15 @@ from servers.tasks import get_task, get_task_branch
 from servers.memory import search_memory
 from servers.graph import get_neighbors, get_impact
 from servers.ssot import load_doctrine, load_flow_spec
+from servers.facade import sync
+
+# ⭐ 第一步：同步 Code Graph（Executor 可能修改了檔案）
+project_path = "/path/to/project"  # 從 prompt 取得
+project_name = "my-project"  # 從 prompt 取得
+
+print("📊 同步 Code Graph（確保驗證最新狀態）...")
+sync_result = sync(project_path, project_name, incremental=True)
+print(f"✅ 同步完成: 節點 {sync_result.get('stats', {}).get('nodes', 0)}")
 
 # 讀取任務和 branch 信息
 task = get_task(TASK_ID)
