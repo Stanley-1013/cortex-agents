@@ -105,6 +105,27 @@ Task(
 )
 ```
 
+**⭐ 派發 PFC 時必須包含的指示：**
+
+```
+Task(
+    subagent_type='pfc',
+    prompt=f'''PROJECT = "{project_name}"
+PROJECT_PATH = "{project_path}"
+
+任務：{user_request}
+
+**要求：**
+1. 分析任務範圍，使用 Code Graph 確認相關檔案
+2. 規劃子任務 DAG
+3. **必須呼叫 create_task() 將任務寫入 DB**
+4. 輸出派發指令供主對話執行
+'''
+)
+```
+
+> ⚠️ **重點**：prompt 必須明確要求 PFC 「呼叫 create_task() 將任務寫入 DB」，否則 PFC 可能只輸出規劃文字而不建立任務
+
 **⭐ 派發 PFC 時的檔案範圍處理：**
 
 > ⚠️ **主對話不要自己搜尋檔案後放入 prompt** — 這會讓 PFC 誤以為是使用者指定範圍而漏掉檔案
@@ -129,6 +150,30 @@ Task(subagent_type='pfc', prompt=f'為以下檔案寫測試:\n{files}')
 3. PFC 用 **Code Graph 確認完整範圍**
 4. PFC 規劃後輸出「派發指令」
 5. **主對話**使用 Task tool 執行派發
+
+## ⭐ 主對話：收到 PFC 輸出後的處理
+
+**PFC agent 返回後，主對話必須：**
+
+```python
+# 1. 檢查 DB 任務狀態
+from servers.tasks import get_task_progress
+progress = get_task_progress(project="PROJECT_NAME")
+pending_tasks = [t for t in progress.get('tasks', []) if t['status'] == 'pending']
+
+# 2. 根據任務的 assigned_agent 派發對應 agent
+# 3. 使用 Task tool 派發（executor/critic/researcher/memory 等）
+```
+
+**主對話職責（不可省略）：**
+| 步驟 | 動作 |
+|------|------|
+| PFC 完成 | 讀取 DB 確認任務已建立 |
+| 用戶確認 | 根據 `assigned_agent` 派發對應 agent |
+| Agent 完成 | 檢查任務是否需要驗證，派發 critic |
+| 全部完成 | 派發 memory 儲存經驗 |
+
+**❌ 禁止：** 主對話看到 PFC 輸出後不操作 DB，只等用戶手動提醒
 
 **範例 - 派發 Executor：**
 ```
