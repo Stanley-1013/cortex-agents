@@ -85,12 +85,14 @@ DEFAULT_NODE_KINDS: List[Tuple[str, str, str, Optional[str], Optional[str], Opti
     # Code Graph Layer（從 AST 提取）
     ('file', '檔案', '源碼文件', '📁', '#607D8B', 'ast'),
     ('module', '模組', '套件/模組', '📚', '#795548', 'ast'),
+    ('package', '套件', 'Java 套件', '📦', '#795548', 'ast'),
     ('class', '類別', '類別定義', '🏛️', '#FF9800', 'ast'),
     ('function', '函式', '函式/方法', '⚡', '#FFC107', 'ast'),
     ('interface', '介面', '介面定義', '🔌', '#00BCD4', 'ast'),
     ('type', '型別', '型別定義', '📐', '#E91E63', 'ast'),
     ('constant', '常數', '常數定義', '📌', '#9E9E9E', 'ast'),
     ('variable', '變數', '模組級變數', '📊', '#8BC34A', 'ast'),
+    ('annotation', '註解', 'Java 註解定義', '🏷️', '#FF6F00', 'ast'),
 
     # API Layer
     ('api', 'API', 'API endpoint', '🌐', '#3F51B5', 'route'),

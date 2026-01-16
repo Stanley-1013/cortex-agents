@@ -33,3 +33,5 @@ brain/*.backup.*
 
 # Hook logs
 hooks/hook.log
+
+.claude/

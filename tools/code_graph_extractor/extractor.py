@@ -92,6 +92,7 @@ SUPPORTED_EXTENSIONS = {
     '.jsx': 'javascript',
     '.py': 'python',
     '.go': 'go',
+    '.java': 'java',
 }
 
 # 忽略的目錄
@@ -208,6 +209,46 @@ class RegexExtractor:
         ),
         'const': re.compile(
             r'^([A-Z][A-Z0-9_]*)\s*=',
+            re.MULTILINE
+        ),
+    }
+
+    # Java patterns
+    JAVA_PATTERNS = {
+        'package': re.compile(
+            r'^\s*package\s+([\w.]+)\s*;',
+            re.MULTILINE
+        ),
+        'import': re.compile(
+            r'^\s*import\s+(?:static\s+)?([\w.*]+)\s*;',
+            re.MULTILINE
+        ),
+        'class': re.compile(
+            r'^\s*(?:public\s+|private\s+|protected\s+)?(?:abstract\s+)?(?:final\s+)?(?:static\s+)?class\s+(\w+)(?:<[^>]+>)?(?:\s+extends\s+([\w.<>]+))?(?:\s+implements\s+([\w\s,.<>]+))?\s*\{',
+            re.MULTILINE
+        ),
+        'interface': re.compile(
+            r'^\s*(?:public\s+|private\s+|protected\s+)?interface\s+(\w+)(?:<[^>]+>)?(?:\s+extends\s+([\w\s,.<>]+))?\s*\{',
+            re.MULTILINE
+        ),
+        'enum': re.compile(
+            r'^\s*(?:public\s+|private\s+|protected\s+)?enum\s+(\w+)(?:\s+implements\s+([\w\s,.<>]+))?\s*\{',
+            re.MULTILINE
+        ),
+        'annotation': re.compile(
+            r'^\s*(?:public\s+|private\s+|protected\s+)?@interface\s+(\w+)\s*\{',
+            re.MULTILINE
+        ),
+        'method': re.compile(
+            r'^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|private|protected)\s+)?(?:static\s+)?(?:final\s+)?(?:abstract\s+)?(?:synchronized\s+)?(?:native\s+)?(?:<[^>]+>\s+)?([A-Z][\w.<>\[\]]*|void|int|long|short|byte|char|boolean|float|double)\s+(\w+)\s*\(([^)]*)\)(?:\s+throws\s+([\w\s,.<>]+))?\s*(?:\{|;)',
+            re.MULTILINE
+        ),
+        'field': re.compile(
+            r'^\s*(?:public\s+|private\s+|protected\s+)?(?:static\s+)?(?:final\s+)?(?:transient\s+)?(?:volatile\s+)?([\w.<>\[\],\s]+)\s+(\w+)(?:\s*=\s*[^;]+)?\s*;',
+            re.MULTILINE
+        ),
+        'constant': re.compile(
+            r'^\s*(?:public\s+|private\s+|protected\s+)?static\s+final\s+([\w.<>\[\]]+)\s+([A-Z][A-Z0-9_]*)\s*=',
             re.MULTILINE
         ),
     }
@@ -556,6 +597,415 @@ class RegexExtractor:
 
         return len(lines)
 
+    @staticmethod
+    def _remove_java_comments(content: str) -> str:
+        """
+        移除 Java 註解以避免 regex 誤判
+
+        處理：
+        - 單行註解: // ...
+        - 多行註解: /* ... */
+        - Javadoc 註解: /** ... */
+        """
+        # 移除多行註解（包含 javadoc）
+        content = re.sub(r'/\*[\s\S]*?\*/', '', content)
+        # 移除單行註解
+        content = re.sub(r'//[^\n]*', '', content)
+        return content
+
+    @staticmethod
+    def _find_java_block_end(lines: List[str], start_line: int) -> int:
+        """
+        找到 Java block 結束行（括號配對，考慮字串/字元字面值）
+
+        處理：
+        - 巢狀括號
+        - 字串字面值中的括號
+        - 字元字面值中的括號
+        """
+        brace_count = 0
+        started = False
+        in_string = False
+        in_char = False
+        escape_next = False
+
+        for i, line in enumerate(lines[start_line:], start=start_line):
+            for char in line:
+                if escape_next:
+                    escape_next = False
+                    continue
+
+                if char == '\\':
+                    escape_next = True
+                    continue
+
+                if char == '"' and not in_char:
+                    in_string = not in_string
+                    continue
+
+                if char == "'" and not in_string:
+                    in_char = not in_char
+                    continue
+
+                if in_string or in_char:
+                    continue
+
+                if char == '{':
+                    brace_count += 1
+                    started = True
+                elif char == '}':
+                    brace_count -= 1
+                    if started and brace_count == 0:
+                        return i + 1  # 1-indexed
+
+        return len(lines)
+
+    @classmethod
+    def extract_java(cls, content: str, file_path: str) -> ExtractionResult:
+        """提取 Java 程式碼結構"""
+        result = ExtractionResult(
+            file_path=file_path,
+            language='java',
+            file_hash=hashlib.md5(content.encode()).hexdigest()
+        )
+
+        # 前處理：移除註解
+        cleaned_content = cls._remove_java_comments(content)
+        lines = cleaned_content.split('\n')
+
+        # File node
+        file_node = CodeNode(
+            id=make_node_id('file', file_path),
+            kind='file',
+            name=os.path.basename(file_path),
+            file_path=file_path,
+            language='java',
+            hash=result.file_hash
+        )
+        result.nodes.append(file_node)
+
+        # 追蹤 package 名稱用於 qualified ID
+        package_name = ''
+
+        # 提取 package
+        for match in cls.JAVA_PATTERNS['package'].finditer(cleaned_content):
+            package_name = match.group(1)
+            break  # 每個檔案只有一個 package
+
+        # 提取 imports
+        for match in cls.JAVA_PATTERNS['import'].finditer(cleaned_content):
+            import_path = match.group(1)
+            line_num = cleaned_content[:match.start()].count('\n') + 1
+
+            # 處理萬用字元 import
+            if import_path.endswith('.*'):
+                target_id = f"package.{import_path[:-2]}"
+            else:
+                target_id = f"class.{import_path}"
+
+            result.edges.append(CodeEdge(
+                from_id=file_node.id,
+                to_id=target_id,
+                kind='imports',
+                line_number=line_num
+            ))
+
+        # 追蹤 class 堆疊處理 inner class
+        class_stack = []  # [(class_name, class_id, line_end)]
+
+        # 提取 classes
+        for match in cls.JAVA_PATTERNS['class'].finditer(cleaned_content):
+            name = match.group(1)
+            extends = match.group(2)
+            implements = match.group(3)
+            line_num = cleaned_content[:match.start()].count('\n') + 1
+            line_end = cls._find_java_block_end(lines, line_num - 1)
+
+            # 判斷 visibility
+            match_text = match.group(0)
+            if 'public' in match_text:
+                visibility = 'public'
+            elif 'protected' in match_text:
+                visibility = 'protected'
+            elif 'private' in match_text:
+                visibility = 'private'
+            else:
+                visibility = 'package'  # Java 預設
+
+            # 生成 qualified ID
+            qualified_name = f"{package_name}.{name}" if package_name else name
+            class_id = make_node_id('class', file_path, qualified_name)
+
+            class_node = CodeNode(
+                id=class_id,
+                kind='class',
+                name=name,
+                file_path=file_path,
+                line_start=line_num,
+                line_end=line_end,
+                visibility=visibility,
+                language='java'
+            )
+            result.nodes.append(class_node)
+
+            # 父子關係
+            if class_stack and line_num < class_stack[-1][2]:
+                # Inner class - 包含於父 class
+                parent_id = class_stack[-1][1]
+                result.edges.append(CodeEdge(
+                    from_id=parent_id,
+                    to_id=class_id,
+                    kind='contains',
+                    line_number=line_num
+                ))
+            else:
+                # 頂層 class - 由 file 定義
+                result.edges.append(CodeEdge(
+                    from_id=file_node.id,
+                    to_id=class_id,
+                    kind='defines'
+                ))
+
+            # 繼承
+            if extends:
+                extends_name = extends.strip().split('<')[0].strip()
+                result.edges.append(CodeEdge(
+                    from_id=class_id,
+                    to_id=f"class.{extends_name}",
+                    kind='extends',
+                    line_number=line_num,
+                    confidence=0.8
+                ))
+
+            # 實作
+            if implements:
+                for iface in implements.split(','):
+                    iface_name = iface.strip().split('<')[0].strip()
+                    if iface_name:
+                        result.edges.append(CodeEdge(
+                            from_id=class_id,
+                            to_id=f"interface.{iface_name}",
+                            kind='implements',
+                            line_number=line_num,
+                            confidence=0.8
+                        ))
+
+            # 清理過期的 class stack
+            while class_stack and line_num >= class_stack[-1][2]:
+                class_stack.pop()
+
+            class_stack.append((name, class_id, line_end))
+
+        # 提取 interfaces
+        for match in cls.JAVA_PATTERNS['interface'].finditer(cleaned_content):
+            name = match.group(1)
+            extends = match.group(2)
+            line_num = cleaned_content[:match.start()].count('\n') + 1
+            line_end = cls._find_java_block_end(lines, line_num - 1)
+
+            qualified_name = f"{package_name}.{name}" if package_name else name
+            iface_id = make_node_id('interface', file_path, qualified_name)
+
+            iface_node = CodeNode(
+                id=iface_id,
+                kind='interface',
+                name=name,
+                file_path=file_path,
+                line_start=line_num,
+                line_end=line_end,
+                language='java'
+            )
+            result.nodes.append(iface_node)
+            result.edges.append(CodeEdge(
+                from_id=file_node.id,
+                to_id=iface_id,
+                kind='defines'
+            ))
+
+            # Interface 繼承
+            if extends:
+                for parent in extends.split(','):
+                    parent_name = parent.strip().split('<')[0].strip()
+                    if parent_name:
+                        result.edges.append(CodeEdge(
+                            from_id=iface_id,
+                            to_id=f"interface.{parent_name}",
+                            kind='extends',
+                            line_number=line_num,
+                            confidence=0.8
+                        ))
+
+        # 提取 enums
+        for match in cls.JAVA_PATTERNS['enum'].finditer(cleaned_content):
+            name = match.group(1)
+            implements = match.group(2)
+            line_num = cleaned_content[:match.start()].count('\n') + 1
+            line_end = cls._find_java_block_end(lines, line_num - 1)
+
+            qualified_name = f"{package_name}.{name}" if package_name else name
+            enum_id = make_node_id('enum', file_path, qualified_name)
+
+            enum_node = CodeNode(
+                id=enum_id,
+                kind='enum',
+                name=name,
+                file_path=file_path,
+                line_start=line_num,
+                line_end=line_end,
+                language='java'
+            )
+            result.nodes.append(enum_node)
+            result.edges.append(CodeEdge(
+                from_id=file_node.id,
+                to_id=enum_id,
+                kind='defines'
+            ))
+
+            # Enum 實作
+            if implements:
+                for iface in implements.split(','):
+                    iface_name = iface.strip().split('<')[0].strip()
+                    if iface_name:
+                        result.edges.append(CodeEdge(
+                            from_id=enum_id,
+                            to_id=f"interface.{iface_name}",
+                            kind='implements',
+                            line_number=line_num,
+                            confidence=0.8
+                        ))
+
+        # 提取 annotations (@interface)
+        for match in cls.JAVA_PATTERNS['annotation'].finditer(cleaned_content):
+            name = match.group(1)
+            line_num = cleaned_content[:match.start()].count('\n') + 1
+            line_end = cls._find_java_block_end(lines, line_num - 1)
+
+            qualified_name = f"{package_name}.{name}" if package_name else name
+            annotation_id = make_node_id('annotation', file_path, qualified_name)
+
+            annotation_node = CodeNode(
+                id=annotation_id,
+                kind='annotation',
+                name=name,
+                file_path=file_path,
+                line_start=line_num,
+                line_end=line_end,
+                language='java'
+            )
+            result.nodes.append(annotation_node)
+            result.edges.append(CodeEdge(
+                from_id=file_node.id,
+                to_id=annotation_id,
+                kind='defines'
+            ))
+
+        # 收集所有 class/interface/enum 名稱和範圍用於過濾建構子和定位 containing class
+        type_names = set()
+        type_ranges = []  # [(name, id, line_start, line_end)]
+        for node in result.nodes:
+            if node.kind in ('class', 'interface', 'enum', 'annotation'):
+                type_names.add(node.name)
+                type_ranges.append((node.name, node.id, node.line_start, node.line_end))
+
+        # 按 line_start 排序，用於找到最內層的 containing class
+        type_ranges.sort(key=lambda x: x[2])
+
+        # 提取 methods（排除建構子）
+        for match in cls.JAVA_PATTERNS['method'].finditer(cleaned_content):
+            return_type = match.group(1).strip()
+            name = match.group(2)
+            params = match.group(3)
+            throws = match.group(4)
+            line_num = cleaned_content[:match.start()].count('\n') + 1
+
+            # 跳過建構子（方法名等於 class 名稱且沒有 return type）
+            # 建構子的特徵：名稱等於其所在 class，且 return type 也等於該 class
+            # 例如：public User(String name) 會被 regex 匹配為 return_type=User, name=User
+            if name in type_names and return_type == name:
+                continue
+
+            # 跳過看起來不像方法的匹配（例如 throw new X()）
+            if return_type in ('throw', 'return', 'new', 'if', 'for', 'while', 'switch'):
+                continue
+
+            line_end = cls._find_java_block_end(lines, line_num - 1)
+
+            # 判斷 visibility
+            match_text = match.group(0)
+            if 'public' in match_text:
+                visibility = 'public'
+            elif 'protected' in match_text:
+                visibility = 'protected'
+            elif 'private' in match_text:
+                visibility = 'private'
+            else:
+                visibility = 'package'
+
+            method_id = make_node_id('function', file_path, name)
+            signature = f"{return_type} {name}({params})"
+            if throws:
+                signature += f" throws {throws.strip()}"
+
+            method_node = CodeNode(
+                id=method_id,
+                kind='function',
+                name=name,
+                file_path=file_path,
+                line_start=line_num,
+                line_end=line_end,
+                signature=signature,
+                visibility=visibility,
+                language='java'
+            )
+            result.nodes.append(method_node)
+
+            # 找到包含此 method 的最內層 class
+            containing_class = None
+            for type_name, type_id, type_start, type_end in reversed(type_ranges):
+                if type_start < line_num < type_end:
+                    containing_class = type_id
+                    break
+
+            if containing_class:
+                result.edges.append(CodeEdge(
+                    from_id=containing_class,
+                    to_id=method_id,
+                    kind='contains',
+                    line_number=line_num
+                ))
+            else:
+                result.edges.append(CodeEdge(
+                    from_id=file_node.id,
+                    to_id=method_id,
+                    kind='defines'
+                ))
+
+        # 提取 constants (static final UPPER_CASE)
+        for match in cls.JAVA_PATTERNS['constant'].finditer(cleaned_content):
+            type_name = match.group(1)
+            name = match.group(2)
+            line_num = cleaned_content[:match.start()].count('\n') + 1
+
+            const_id = make_node_id('constant', file_path, name)
+
+            const_node = CodeNode(
+                id=const_id,
+                kind='constant',
+                name=name,
+                file_path=file_path,
+                line_start=line_num,
+                line_end=line_num,
+                language='java'
+            )
+            result.nodes.append(const_node)
+            result.edges.append(CodeEdge(
+                from_id=file_node.id,
+                to_id=const_id,
+                kind='defines'
+            ))
+
+        return result
+
 
 # =============================================================================
 # Main API
@@ -599,6 +1049,8 @@ def extract_from_file(file_path: str) -> ExtractionResult:
         return RegexExtractor.extract_typescript(content, file_path)
     elif language == 'python':
         return RegexExtractor.extract_python(content, file_path)
+    elif language == 'java':
+        return RegexExtractor.extract_java(content, file_path)
     else:
         return ExtractionResult(
             file_path=file_path,
